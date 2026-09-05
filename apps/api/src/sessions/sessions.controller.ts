@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { SessionsService } from './sessions.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { JoinSessionDto } from './dto/join-session.dto';
@@ -10,6 +10,11 @@ export class SessionsController {
   @Post('rooms/:roomId/sessions')
   create(@Param('roomId') roomId: string, @Body() dto: CreateSessionDto) {
     return this.sessionsService.create(roomId, dto);
+  }
+
+  @Get('sessions/:id')
+  findOne(@Param('id') id: string) {
+    return this.sessionsService.findOne(id);
   }
 
   @Post('sessions/:id/join')

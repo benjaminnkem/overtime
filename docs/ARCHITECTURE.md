@@ -105,6 +105,9 @@ POST   /rooms/:id/sessions
   body: { scheduledAt, entryFee, currency, minEntries?, questions: [{ text, options, correctOption, timeLimitSec }] }
   res:  { sessionId }
 
+GET    /sessions/:id
+  res:  { id, roomId, scheduledAt, entryFee, currency, status, minEntries, entryCount }
+
 POST   /sessions/:id/join
   body: { walletAddress }
   res:  { entryId, paymentRequest }

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '../../generated/prisma/client.js';
 
 interface JoinPayload {
   sessionId: string;
@@ -87,15 +88,25 @@ export class SessionsGateway {
     const answeredAtMs = Date.now() - active.broadcastAtMs;
     const isCorrect = payload.selectedOption === question.correctOption;
 
-    await this.prisma.answer.create({
-      data: {
-        entryId: payload.entryId,
-        questionId: payload.questionId,
-        selectedOption: payload.selectedOption,
-        answeredAtMs,
-        isCorrect,
-      },
-    });
+    try {
+      await this.prisma.answer.create({
+        data: {
+          entryId: payload.entryId,
+          questionId: payload.questionId,
+          selectedOption: payload.selectedOption,
+          answeredAtMs,
+          isCorrect,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        return; // this entry already answered this question — first answer stands
+      }
+      throw error;
+    }
 
     const rankings = await this.computeLeaderboard(payload.sessionId);
     this.server.to(payload.sessionId).emit('leaderboard', { rankings });

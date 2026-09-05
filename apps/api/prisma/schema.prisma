@@ -62,6 +62,8 @@ model Answer {
   selectedOption String
   answeredAtMs   Int
   isCorrect      Boolean
+
+  @@unique([entryId, questionId])
 }
 
 model Result {
