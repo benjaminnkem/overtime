@@ -1,0 +1,28 @@
+databases:
+  - name: overtime-db
+    plan: free
+    databaseName: overtime
+    user: overtime
+
+services:
+  - type: web
+    name: overtime-api
+    runtime: node
+    plan: free
+    region: oregon
+    healthCheckPath: /
+    buildCommand: corepack enable && corepack prepare pnpm@11.25.0 --activate && pnpm install --frozen-lockfile && pnpm --filter api exec prisma generate && pnpm --filter api run build
+    startCommand: pnpm --filter api exec prisma migrate deploy && pnpm --filter api run start:prod
+    envVars:
+      - key: NODE_VERSION
+        value: 24.11.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: overtime-db
+          property: connectionString
+      - key: NIMIQ_CUSTODIAL_PRIVATE_KEY
+        sync: false
+      - key: NIMIQ_NETWORK
+        value: TestAlbatross
+      - key: PORT
+        value: 4000
