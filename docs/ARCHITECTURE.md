@@ -166,11 +166,22 @@ an open upstream issue,
 issue (nimiq/core-rs-albatross#3417, "Node.js/WebContainer compatibility") was closed
 without a documented fix.
 
-**This was first found in local dev, then confirmed reproducing identically on the
-live Render deployment** (`overtime-api`, a normal cloud container with unrestricted
-outbound networking) — same error, same stuck-at-`connecting` behavior. That rules out
-a sandbox-specific network restriction as the cause; this looks like a genuine bug in
-`@nimiq/core@2.21.0`'s Node.js build, not an environment quirk.
+**Ruled out as the cause, each confirmed by direct testing:**
+- A sandbox-specific network restriction — reproduces identically on the live Render
+  deployment (`overtime-api`, a normal cloud container with unrestricted outbound
+  networking).
+- The specific `@nimiq/core` version — reproduces identically on `2.0.0` (the first
+  Albatross release), `2.7.2` (mid-range), and `2.21.0` (`latest`).
+- The Node.js version — reproduces identically on Node 20 (LTS) and Node 24.
+
+Across all of that, the error and behavior are exactly the same: `arg0.addEventListener
+is not a function` thrown from inside the WASM bindings while the library tries to wire
+up its internal worker thread's message listener, peer count stuck at 0, consensus
+stuck at `connecting`. This points to the WASM/wasm-bindgen glue code calling
+`.addEventListener` on the wrong object for Node's `worker_threads` environment (Node's
+`Worker`/`MessagePort` do support `addEventListener`, but apparently not whatever object
+the library hands it) — a bug in how `@nimiq/core` detects and wires up its Node.js
+worker environment, present in every release and every runtime tested.
 
 Because of this, `verifyDeposit`/`sendPayout` in `NimiqClientService` are implemented
 against the verified API (`getTransaction`, `TransactionBuilder.newBasic`,
