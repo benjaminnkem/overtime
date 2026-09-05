@@ -24,7 +24,7 @@ Built on the [Nimiq Pay Mini Apps Framework](https://nimiq.dev/mini-apps) for th
 
 Communities want a recurring ritual with stakes, but nothing today gives them a hosted, fair, skill-scored way to run one. Ad hoc trivia via Google Forms or Kahoot has no stakes and no payout. Existing wager-style Mini Apps are single-session prediction tools, not something a group owns and returns to week after week.
 
-Overtime is a *room*, not a bet: the same group, the same weekly slot, a cumulative leaderboard across sessions, and payouts split across the top finishers so more people have a reason to come back — ranked by accuracy and speed, not chance.
+Overtime is a _room_, not a bet: the same group, the same weekly slot, a cumulative leaderboard across sessions, and payouts split across the top finishers so more people have a reason to come back — ranked by accuracy and speed, not chance.
 
 ## How It Works
 
@@ -38,6 +38,7 @@ Overtime is a *room*, not a bet: the same group, the same weekly slot, a cumulat
 ## Features
 
 **MVP**
+
 - Host-created Rooms with a recurring weekly Session schedule
 - NIM entry-fee collection via Nimiq Pay
 - Live question broadcast with a per-question countdown
@@ -46,6 +47,7 @@ Overtime is a *room*, not a bet: the same group, the same weekly slot, a cumulat
 - Per-Room cumulative leaderboard across past sessions
 
 **Stretch**
+
 - USDT support alongside NIM
 - Host-customizable payout splits (top 3, top 5, etc.)
 - Auto-generated weekly question sets by topic
@@ -54,13 +56,13 @@ See [`docs/PRD.md`](docs/PRD.md) for the full requirements and non-goals.
 
 ## Tech Stack
 
-| Layer | Choice |
-|---|---|
+| Layer    | Choice                                                         |
+| -------- | -------------------------------------------------------------- |
 | Frontend | Next.js (App Router), TypeScript, Tailwind CSS, TanStack Query |
-| Backend | NestJS, socket.io |
-| Database | PostgreSQL, Prisma |
-| Payments | [`@nimiq/mini-app-sdk`](https://nimiq.dev/mini-apps) |
-| Monorepo | Turborepo, pnpm workspaces |
+| Backend  | NestJS, socket.io                                              |
+| Database | PostgreSQL, Prisma                                             |
+| Payments | [`@nimiq/mini-app-sdk`](https://nimiq.dev/mini-apps)           |
+| Monorepo | Turborepo, pnpm workspaces                                     |
 
 ## Architecture
 
@@ -78,7 +80,7 @@ See [`docs/PRD.md`](docs/PRD.md) for the full requirements and non-goals.
  questions, answers, results]         to all connected clients]
         |
         v
-[nimiq-settlement] --> [Custodial NIM wallet] --> top-N payout transactions
+[NimiqService + NimiqClientService] --> [Custodial NIM wallet] --> top-N payout transactions
 ```
 
 Full data models and API contracts are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -136,23 +138,26 @@ Copy each app's example env file before running it:
 
 ## Project Status
 
-Actively in development for a **September 18, 2026** hackathon submission deadline. The full MVP loop works end-to-end: create a Room, schedule a Session, join, live question broadcast with a server-timestamped countdown, live leaderboard, and settlement (top-N payout split or minimum-entries refund).
+Actively in development for a **September 18, 2026** hackathon submission deadline. The full MVP loop works end-to-end — verified live in production, not just locally: create a Room, schedule a Session, join, live question broadcast with a server-timestamped countdown, live leaderboard, and settlement (top-N payout split or minimum-entries refund).
 
-Nimiq integration is partial: the frontend uses the real `@nimiq/mini-app-sdk` to detect the user's wallet and collect the entry fee via `sendBasicTransaction` when running inside Nimiq Pay (falls back to manual entry outside it, e.g. for local dev), and the backend derives a real custodial NIM address via `@nimiq/core`. Still open: verifying deposits on-chain and actually sending payout transactions — both need a connected Nimiq client, not just address derivation.
+**Deployed:**
 
-Track detailed phase-by-phase progress in [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md).
+- Frontend: https://overtime-web.vercel.app (Vercel, auto-deploys on push to `main`)
+- API: https://overtime-api-j0u4.onrender.com (Render, via `render.yaml`; free tier spins down after 15 min idle — first request after that takes a few seconds)
+
+Nimiq integration is partial: the frontend uses the real `@nimiq/mini-app-sdk` to detect the user's wallet and collect the entry fee via `sendBasicTransaction` when running inside Nimiq Pay (falls back to manual entry outside it, e.g. for local dev), and the backend derives a real custodial NIM address via `@nimiq/core`. Still open, and confirmed **not** environment-specific — see `docs/ARCHITECTURE.md`: `@nimiq/core`'s Node.js client cannot reach consensus on either local dev or the live Render deployment, which blocks real on-chain deposit verification and payout sending.
 
 Track detailed phase-by-phase progress in [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md).
 
 ## Documentation
 
-| Doc | Contents |
-|---|---|
-| [`docs/PRD.md`](docs/PRD.md) | Problem statement, target users, user stories, success metrics |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Data models, API contracts, third-party services |
-| [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) | Phased build plan and checkpoints |
-| [`docs/PITCH.md`](docs/PITCH.md) | Stage pitch and anticipated judge Q&A |
-| [`docs/RISKS.md`](docs/RISKS.md) | Live-demo risks and fallbacks |
+| Doc                                            | Contents                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------- |
+| [`docs/PRD.md`](docs/PRD.md)                   | Problem statement, target users, user stories, success metrics |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Data models, API contracts, third-party services               |
+| [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md)     | Phased build plan and checkpoints                              |
+| [`docs/PITCH.md`](docs/PITCH.md)               | Stage pitch and anticipated judge Q&A                          |
+| [`docs/RISKS.md`](docs/RISKS.md)               | Live-demo risks and fallbacks                                  |
 
 ## Team
 

@@ -39,5 +39,5 @@ Next.js · TypeScript · Tailwind CSS · TanStack Query · NestJS · socket.io �
 ## Links
 
 - Repo: `github.com/tochison/overtime` (create on kickoff)
-- Live demo: add once deployed
+- Live demo: https://overtime-web.vercel.app (API: https://overtime-api-j0u4.onrender.com)
 - Deck: add before submission

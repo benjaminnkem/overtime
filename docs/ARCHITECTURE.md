@@ -152,28 +152,35 @@ GET    /rooms/:id/leaderboard
 - `@nimiq/mini-app-sdk` — https://nimiq.dev/mini-apps — client-side entry-fee payment, verified against the actual published package
 - `@nimiq/core` (v2.21.0) — server-side custodial wallet (`NimiqService`) and live chain access (`NimiqClientService`)
 - `socket.io` — the real-time layer; heavier lift here than in TurnUp, budget real testing time under actual venue wifi conditions, not just localhost
-- Hosting: Vercel for the Next.js frontend, plus a small always-on Node host (e.g. Railway or Fly.io) for the NestJS/socket.io API — Vercel's serverless functions don't reliably hold persistent socket connections, so the real-time API should not run as serverless functions
+- Hosting: Vercel for the Next.js frontend (https://overtime-web.vercel.app), Render for the NestJS/socket.io API + Postgres (https://overtime-api-j0u4.onrender.com, defined in `render.yaml` as a Blueprint) — Vercel's serverless functions don't reliably hold persistent socket connections, so the real-time API should not run as serverless functions. Render's free web service tier spins down after 15 minutes idle and takes a short cold-start hit on the next request — worth remembering during a live demo.
 
-### Known issue: `@nimiq/core` Node.js client never reaches consensus (untested past this)
+### Known issue: `@nimiq/core` Node.js client never reaches consensus (confirmed on real infrastructure)
 
-In this dev environment, `Nimiq.Client` (TestAlbatross) connects to seed nodes at the
-transport level but every peer connection is dropped immediately, logging
-`TypeError: arg0.addEventListener is not a function` from inside the WASM bindings.
-Peer count never rises above 0 and consensus never establishes, even after 40+
-seconds. This reproduces the symptoms of an open upstream issue,
+`Nimiq.Client` (TestAlbatross) connects to seed nodes at the transport level but every
+peer connection is dropped immediately, logging `TypeError: arg0.addEventListener is
+not a function` from inside the WASM bindings. Peer count never rises above 0 and
+consensus never establishes, even after 40+ seconds. This reproduces the symptoms of
+an open upstream issue,
 [nimiq/core-rs-albatross#3101](https://github.com/nimiq/core-rs-albatross/issues/3101)
 ("Light Web Node panic after restart" — same `addEventListener` error). A related
 issue (nimiq/core-rs-albatross#3417, "Node.js/WebContainer compatibility") was closed
 without a documented fix.
 
+**This was first found in local dev, then confirmed reproducing identically on the
+live Render deployment** (`overtime-api`, a normal cloud container with unrestricted
+outbound networking) — same error, same stuck-at-`connecting` behavior. That rules out
+a sandbox-specific network restriction as the cause; this looks like a genuine bug in
+`@nimiq/core@2.21.0`'s Node.js build, not an environment quirk.
+
 Because of this, `verifyDeposit`/`sendPayout` in `NimiqClientService` are implemented
 against the verified API (`getTransaction`, `TransactionBuilder.newBasic`,
-`sendTransaction`, etc.) but have **not** been confirmed against a real network — the
-client itself never gets past `connecting`. `SessionsService` degrades gracefully when
-this happens (records deposits as unverified, settles with `txHash: null`) rather than
-blocking or crashing, but this needs to be re-tested on the actual deploy target
-(Railway/Fly.io, a different Node version, or a real machine with unrestricted
-outbound networking) before relying on it — it may be specific to this sandbox's
-network egress rather than the library itself. There are currently no public Nimiq
-open RPC servers listed either (`nimiq.dev/rpc/open-servers` shows "No data" for both
-mainnet and testnet), so an RPC-based fallback isn't available out of the box.
+`sendTransaction`, etc.) but have **not** been exercised against a real network — the
+client itself never gets past `connecting`, on any environment tested so far.
+`SessionsService` degrades gracefully when this happens (records deposits as
+unverified, settles with `txHash: null`) rather than blocking or crashing, but real
+on-chain deposit verification and payout sending do not currently work anywhere. There
+are currently no public Nimiq open RPC servers listed either
+(`nimiq.dev/rpc/open-servers` shows "No data" for both mainnet and testnet), so an
+RPC-based fallback isn't available out of the box. Worth raising with Nimiq's own
+Discord/support before the demo, since this blocks the "automated payout" half of the
+pitch working for real.
