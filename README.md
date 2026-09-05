@@ -1,159 +1,162 @@
-# Turborepo starter
+# Overtime
 
-This Turborepo starter is maintained by the Turborepo core team.
+**Your group chat's trivia debates, as a weekly live event with real stakes.**
 
-## Using this example
+Overtime turns the "I bet I'd win" energy of every community WhatsApp or Telegram group into an actual scheduled event. A host stands up a live trivia **Room** for their group, members join a **Session** with a small NIM entry fee, questions go out in real time with a countdown, the leaderboard re-ranks live as answers land, and the top finishers are paid out automatically the moment the session ends — no manual settlement, no winner-take-all.
 
-Run the following command:
+Built on the [Nimiq Pay Mini Apps Framework](https://nimiq.dev/mini-apps) for the Nimiq Pay Mini Apps hackathon.
 
-```sh
-npx create-turbo@latest
+## Table of Contents
+
+- [The Problem](#the-problem)
+- [How It Works](#how-it-works)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Repository Structure](#repository-structure)
+- [Getting Started](#getting-started)
+- [Project Status](#project-status)
+- [Documentation](#documentation)
+- [Team](#team)
+- [License](#license)
+
+## The Problem
+
+Communities want a recurring ritual with stakes, but nothing today gives them a hosted, fair, skill-scored way to run one. Ad hoc trivia via Google Forms or Kahoot has no stakes and no payout. Existing wager-style Mini Apps are single-session prediction tools, not something a group owns and returns to week after week.
+
+Overtime is a *room*, not a bet: the same group, the same weekly slot, a cumulative leaderboard across sessions, and payouts split across the top finishers so more people have a reason to come back — ranked by accuracy and speed, not chance.
+
+## How It Works
+
+1. A **host** creates a Room for their group (title, topic, recurring schedule) and schedules a live Session with a question set and a NIM entry fee.
+2. **Participants** join the Session and pay the entry fee through their Nimiq Pay wallet.
+3. Questions are pushed live with a countdown timer; participants answer in real time.
+4. The leaderboard re-ranks live as answers land — server-timestamped, so network lag doesn't cost you your rank.
+5. When the session ends, the top N finishers are paid automatically from the pooled entry fees. If a session doesn't meet the minimum entry threshold, it doesn't go live and everyone is refunded instead.
+6. The Room keeps a cumulative leaderboard across every session it's run.
+
+## Features
+
+**MVP**
+- Host-created Rooms with a recurring weekly Session schedule
+- NIM entry-fee collection via Nimiq Pay
+- Live question broadcast with a per-question countdown
+- Real-time, server-authoritative leaderboard
+- Automatic top-N payout at session close, with a minimum-entries refund path
+- Per-Room cumulative leaderboard across past sessions
+
+**Stretch**
+- USDT support alongside NIM
+- Host-customizable payout splits (top 3, top 5, etc.)
+- Auto-generated weekly question sets by topic
+
+See [`docs/PRD.md`](docs/PRD.md) for the full requirements and non-goals.
+
+## Tech Stack
+
+| Layer | Choice |
+|---|---|
+| Frontend | Next.js (App Router), TypeScript, Tailwind CSS, TanStack Query |
+| Backend | NestJS, socket.io |
+| Database | PostgreSQL, Prisma |
+| Payments | [`@nimiq/mini-app-sdk`](https://nimiq.dev/mini-apps) |
+| Monorepo | Turborepo, pnpm workspaces |
+
+## Architecture
+
+```
+[Participant's Nimiq Pay Wallet]
+        |  (native approval — entry fee)
+        v
+[Overtime Next.js frontend — WebView]
+        |  REST (join/room data)             |  WebSocket (live session)
+        v                                     v
+[Overtime NestJS API] ------------> [socket.io session gateway]
+        |                                     |
+        v                                     v
+[PostgreSQL: rooms, sessions,        [Live leaderboard broadcast
+ questions, answers, results]         to all connected clients]
+        |
+        v
+[nimiq-settlement] --> [Custodial NIM wallet] --> top-N payout transactions
 ```
 
-## What's inside?
+Full data models and API contracts are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-This Turborepo includes the following packages/apps:
+## Repository Structure
 
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `@next/eslint-plugin-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```
+overtime/
+├── apps/
+│   ├── web/     # Next.js frontend (Mini App WebView)
+│   └── api/     # NestJS API + socket.io gateway
+├── packages/
+│   ├── ui/                  # Shared React component library
+│   ├── eslint-config/       # Shared ESLint configs
+│   └── typescript-config/   # Shared tsconfig bases
+└── docs/        # Product/architecture/planning docs
 ```
 
-Without global `turbo`, use your package manager:
+## Getting Started
 
-```sh
-cd my-turborepo
-npx turbo build
-pnpm exec turbo build
-pnpm exec turbo build
+### Prerequisites
+
+- Node.js `>=24`
+- pnpm `11.25.0` (see `packageManager` in [`package.json`](package.json))
+- A local PostgreSQL instance (once the Prisma schema lands — see [Project Status](#project-status))
+
+### Installation
+
+```bash
+git clone https://github.com/tochison/overtime.git
+cd overtime
+pnpm install
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### Running the apps
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+```bash
+# Frontend — http://localhost:3000
+pnpm --filter web dev
 
-```sh
-turbo build --filter=docs
+# Backend API
+pnpm --filter api start:dev
 ```
 
-Without global `turbo`:
+Or run everything through Turborepo from the repo root:
 
-```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+```bash
+pnpm dev
 ```
 
-### Develop
+Environment variables (`.env.local` for `apps/web`, `.env` for `apps/api`) aren't scaffolded yet. Once the Nimiq integration and Prisma schema land, expect at minimum:
 
-To develop all apps and packages, run the following command:
+- `apps/web`: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_NIMIQ_APP_ORIGIN`
+- `apps/api`: `DATABASE_URL`, `NIMIQ_CUSTODIAL_WALLET_SEED`
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+Confirm the exact required `@nimiq/mini-app-sdk` env keys against the current Nimiq docs before relying on this list.
 
-```sh
-cd my-turborepo
-turbo dev
-```
+## Project Status
 
-Without global `turbo`, use your package manager:
+Actively in development for a **September 18, 2026** hackathon submission deadline. Currently at the foundation stage — `apps/web` and `apps/api` are scaffolded; the real-time gateway, Prisma schema, and Nimiq settlement flow are in progress.
 
-```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
-```
+Track detailed phase-by-phase progress in [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md).
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+## Documentation
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+| Doc | Contents |
+|---|---|
+| [`docs/PRD.md`](docs/PRD.md) | Problem statement, target users, user stories, success metrics |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Data models, API contracts, third-party services |
+| [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) | Phased build plan and checkpoints |
+| [`docs/PITCH.md`](docs/PITCH.md) | Stage pitch and anticipated judge Q&A |
+| [`docs/RISKS.md`](docs/RISKS.md) | Live-demo risks and fallbacks |
 
-```sh
-turbo dev --filter=web
-```
+## Team
 
-Without global `turbo`:
+- Teammate — lead
+- Benjamin Nkem ([@tochison](https://github.com/tochison)) — fullstack engineer
 
-```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
+## License
 
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+Not yet added — an MIT license is planned before submission (see [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md)).
