@@ -1,16 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${body}`);
-  }
-  return res.json() as Promise<T>;
-}
+import { http } from "./http";
 
 export interface CreateRoomInput {
   hostId: string;
@@ -57,7 +45,7 @@ export interface JoinResult {
 
 export interface SettleResult {
   refunded?: boolean;
-  entries?: { userId: string; amount: string }[];
+  entries?: { userId: string; amount: string; txHash: string | null }[];
   results?: {
     userId: string;
     rank: number;
@@ -70,48 +58,54 @@ export interface CumulativeLeaderboard {
   cumulative: { userId: string; totalScore: number; sessionsPlayed: number }[];
 }
 
-export function createRoom(input: CreateRoomInput) {
-  return request<{ roomId: string }>("/rooms", {
-    method: "POST",
-    body: JSON.stringify(input),
+export async function createRoom(input: CreateRoomInput) {
+  const { data } = await http.post<{ roomId: string }>("/rooms", input);
+  return data;
+}
+
+export async function createSession(roomId: string, input: CreateSessionInput) {
+  const { data } = await http.post<{ sessionId: string }>(
+    `/rooms/${roomId}/sessions`,
+    input,
+  );
+  return data;
+}
+
+export async function getSession(sessionId: string) {
+  const { data } = await http.get<SessionInfo>(`/sessions/${sessionId}`);
+  return data;
+}
+
+export async function joinSession(sessionId: string, walletAddress: string) {
+  const { data } = await http.post<JoinResult>(`/sessions/${sessionId}/join`, {
+    walletAddress,
   });
+  return data;
 }
 
-export function createSession(roomId: string, input: CreateSessionInput) {
-  return request<{ sessionId: string }>(`/rooms/${roomId}/sessions`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export function getSession(sessionId: string) {
-  return request<SessionInfo>(`/sessions/${sessionId}`);
-}
-
-export function joinSession(sessionId: string, walletAddress: string) {
-  return request<JoinResult>(`/sessions/${sessionId}/join`, {
-    method: "POST",
-    body: JSON.stringify({ walletAddress }),
-  });
-}
-
-export function recordDeposit(
+export async function recordDeposit(
   sessionId: string,
   entryId: string,
   depositTxHash: string,
 ) {
-  return request<{ entryId: string; depositTxHash: string }>(
-    `/sessions/${sessionId}/entries/${entryId}/deposit`,
-    { method: "POST", body: JSON.stringify({ depositTxHash }) },
+  const { data } = await http.post<{
+    entryId: string;
+    depositTxHash: string;
+    depositVerified: boolean;
+  }>(`/sessions/${sessionId}/entries/${entryId}/deposit`, { depositTxHash });
+  return data;
+}
+
+export async function settleSession(sessionId: string) {
+  const { data } = await http.post<SettleResult>(
+    `/sessions/${sessionId}/settle`,
   );
+  return data;
 }
 
-export function settleSession(sessionId: string) {
-  return request<SettleResult>(`/sessions/${sessionId}/settle`, {
-    method: "POST",
-  });
-}
-
-export function getRoomLeaderboard(roomId: string) {
-  return request<CumulativeLeaderboard>(`/rooms/${roomId}/leaderboard`);
+export async function getRoomLeaderboard(roomId: string) {
+  const { data } = await http.get<CumulativeLeaderboard>(
+    `/rooms/${roomId}/leaderboard`,
+  );
+  return data;
 }

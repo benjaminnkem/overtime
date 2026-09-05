@@ -1,19 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   getSession,
   joinSession,
   recordDeposit,
   settleSession,
-  type SessionInfo,
   type SettleResult,
 } from "@/lib/api";
-import {
-  getSocket,
-  type LiveQuestion,
-  type LiveLeaderboard,
-} from "@/lib/socket";
+import { getSocket, type LiveQuestion, type LiveLeaderboard } from "@/lib/socket";
 import { getNimiqProvider } from "@/lib/nimiq";
 import type { NimiqProvider } from "@nimiq/mini-app-sdk";
 
@@ -22,21 +18,19 @@ function entryStorageKey(sessionId: string) {
 }
 
 export function SessionClient({ sessionId }: { sessionId: string }) {
-  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
+  const { data: sessionInfo } = useQuery({
+    queryKey: ["session", sessionId],
+    queryFn: () => getSession(sessionId),
+  });
+
   const [walletAddress, setWalletAddress] = useState("");
   const [entryId, setEntryId] = useState<string | null>(null);
-  const [joinError, setJoinError] = useState<string | null>(null);
-  const [joining, setJoining] = useState(false);
 
-  const [nimiqProvider, setNimiqProvider] = useState<NimiqProvider | null>(
-    null,
+  const [nimiqProvider, setNimiqProvider] = useState<NimiqProvider | null>(null);
+  const [nimiqStatus, setNimiqStatus] = useState<"checking" | "available" | "unavailable">(
+    "checking",
   );
-  const [nimiqStatus, setNimiqStatus] = useState<
-    "checking" | "available" | "unavailable"
-  >("checking");
-  const [paymentStatus, setPaymentStatus] = useState<
-    "idle" | "paying" | "paid" | "error"
-  >("idle");
+  const [paymentStatus, setPaymentStatus] = useState<"idle" | "paying" | "paid" | "error">("idle");
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const [questionState, setQuestionState] = useState<LiveQuestion | null>(null);
@@ -46,22 +40,8 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
   const [now, setNow] = useState(() => Date.now());
 
   const [settleResult, setSettleResult] = useState<SettleResult | null>(null);
-  const [settling, setSettling] = useState(false);
 
   useEffect(() => {
-    getSession(sessionId)
-      .then(setSessionInfo)
-      .catch((err) =>
-        setJoinError(
-          err instanceof Error ? err.message : "Failed to load session",
-        ),
-      );
-  }, [sessionId]);
-
-  useEffect(() => {
-    // Read after mount, not in the initial render, so the client's first
-    // render matches the server (which has no access to localStorage) —
-    // reading it during render causes a hydration mismatch.
     const stored = localStorage.getItem(entryStorageKey(sessionId));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from a browser-only store, not a derived-state loop
     if (stored) setEntryId(stored);
@@ -107,15 +87,9 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
     return () => clearInterval(interval);
   }, [questionState, answered]);
 
-  async function handleJoin(e: React.FormEvent) {
-    e.preventDefault();
-    setJoinError(null);
-    setJoining(true);
-    try {
-      const { entryId: newEntryId, paymentRequest } = await joinSession(
-        sessionId,
-        walletAddress,
-      );
+  const joinMutation = useMutation({
+    mutationFn: async () => {
+      const { entryId: newEntryId, paymentRequest } = await joinSession(sessionId, walletAddress);
       localStorage.setItem(entryStorageKey(sessionId), newEntryId);
       setEntryId(newEntryId);
 
@@ -133,13 +107,17 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
           setPaymentError(result.error.message);
         }
       }
-    } catch (err) {
-      setJoinError(
-        err instanceof Error ? err.message : "Failed to join session",
-      );
-    } finally {
-      setJoining(false);
-    }
+    },
+  });
+
+  const settleMutation = useMutation({
+    mutationFn: () => settleSession(sessionId),
+    onSuccess: setSettleResult,
+  });
+
+  function handleJoin(e: React.FormEvent) {
+    e.preventDefault();
+    joinMutation.mutate();
   }
 
   function startQuestion(index: number) {
@@ -158,23 +136,8 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
     });
   }
 
-  async function handleSettle() {
-    setSettling(true);
-    try {
-      setSettleResult(await settleSession(sessionId));
-    } catch (err) {
-      setJoinError(
-        err instanceof Error ? err.message : "Failed to settle session",
-      );
-    } finally {
-      setSettling(false);
-    }
-  }
-
   const nextIndex = questionState ? questionState.index + 1 : 0;
-  const allQuestionsDone = questionState
-    ? questionState.index + 1 >= questionState.total
-    : false;
+  const allQuestionsDone = questionState ? questionState.index + 1 >= questionState.total : false;
   const secondsLeft = questionState
     ? Math.max(
         0,
@@ -189,8 +152,8 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
         <h1 className="text-2xl font-bold tracking-tight">Live Session</h1>
         {sessionInfo && (
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Entry fee {sessionInfo.entryFee} {sessionInfo.currency} ·{" "}
-            {sessionInfo.entryCount} joined · status: {sessionInfo.status}
+            Entry fee {sessionInfo.entryFee} {sessionInfo.currency} · {sessionInfo.entryCount}{" "}
+            joined · status: {sessionInfo.status}
           </p>
         )}
       </header>
@@ -208,13 +171,15 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
               className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-base outline-none read-only:opacity-70 focus:border-black dark:border-white/15 dark:focus:border-white"
             />
           </label>
-          {joinError && <p className="text-sm text-red-600">{joinError}</p>}
+          {joinMutation.error && (
+            <p className="text-sm text-red-600">{joinMutation.error.message}</p>
+          )}
           <button
             type="submit"
-            disabled={joining || nimiqStatus === "checking"}
+            disabled={joinMutation.isPending || nimiqStatus === "checking"}
             className="rounded-full bg-black px-5 py-3 text-base font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
           >
-            {joining
+            {joinMutation.isPending
               ? paymentStatus === "paying"
                 ? "Confirm in Nimiq Pay…"
                 : "Joining…"
@@ -232,9 +197,7 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
             You&apos;re in as entry <span className="font-mono">{entryId}</span>
           </p>
           {paymentStatus === "paid" && (
-            <p className="text-emerald-600 dark:text-emerald-400">
-              Entry fee paid.
-            </p>
+            <p className="text-emerald-600 dark:text-emerald-400">Entry fee paid.</p>
           )}
           {paymentStatus === "error" && (
             <p className="text-red-600">Payment failed: {paymentError}</p>
@@ -255,17 +218,16 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
           )}
           {allQuestionsDone && !settleResult && (
             <button
-              onClick={handleSettle}
-              disabled={settling}
+              onClick={() => settleMutation.mutate()}
+              disabled={settleMutation.isPending}
               className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
             >
-              {settling ? "Settling…" : "Settle Session"}
+              {settleMutation.isPending ? "Settling…" : "Settle Session"}
             </button>
           )}
         </div>
         <p className="text-xs text-zinc-500">
-          No host authentication yet — these controls are visible to anyone on
-          this page.
+          No host authentication yet — these controls are visible to anyone on this page.
         </p>
       </section>
 
@@ -277,9 +239,7 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
             </span>
             <span>{answered ? "Answered" : `${secondsLeft}s`}</span>
           </div>
-          <h3 className="mt-2 text-xl font-semibold">
-            {questionState.question.text}
-          </h3>
+          <h3 className="mt-2 text-xl font-semibold">{questionState.question.text}</h3>
           <div className="mt-4 flex flex-col gap-2">
             {questionState.question.options.map((opt) => (
               <button
@@ -356,9 +316,8 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
             </ol>
           )}
           <p className="mt-3 text-xs text-zinc-500">
-            Payout amounts are computed, but sending the real on-chain
-            transaction isn&apos;t wired up yet — that needs the Nimiq
-            settlement integration.
+            Payout amounts are computed, but sending the real on-chain transaction isn&apos;t
+            wired up yet — that needs the Nimiq settlement integration.
           </p>
         </section>
       )}

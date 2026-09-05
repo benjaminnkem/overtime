@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
 import { createRoom } from "@/lib/api";
 
 export default function Home() {
@@ -9,25 +10,15 @@ export default function Home() {
   const [hostId, setHostId] = useState("");
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  const { mutate, isPending, error } = useMutation({
+    mutationFn: createRoom,
+    onSuccess: ({ roomId }) => router.push(`/rooms/${roomId}`),
+  });
+
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      const { roomId } = await createRoom({
-        hostId,
-        title,
-        topic: topic || undefined,
-      });
-      router.push(`/rooms/${roomId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create room");
-    } finally {
-      setSubmitting(false);
-    }
+    mutate({ hostId, title, topic: topic || undefined });
   }
 
   return (
@@ -71,14 +62,14 @@ export default function Home() {
             />
           </label>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error.message}</p>}
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={isPending}
             className="mt-2 rounded-full bg-black px-5 py-3 text-base font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
           >
-            {submitting ? "Creating…" : "Create Room"}
+            {isPending ? "Creating…" : "Create Room"}
           </button>
         </form>
       </main>

@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import {
-  createSession,
-  getRoomLeaderboard,
-  type CumulativeLeaderboard,
-} from "@/lib/api";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { createSession, getRoomLeaderboard } from "@/lib/api";
 
 interface QuestionDraft {
   text: string;
@@ -20,39 +17,46 @@ function emptyQuestion(): QuestionDraft {
 }
 
 export function RoomClient({ roomId }: { roomId: string }) {
-  const [leaderboard, setLeaderboard] = useState<
-    CumulativeLeaderboard["cumulative"]
-  >([]);
+  const { data: leaderboard } = useQuery({
+    queryKey: ["room-leaderboard", roomId],
+    queryFn: () => getRoomLeaderboard(roomId),
+    select: (res) => res.cumulative,
+  });
+
   const [scheduledAt, setScheduledAt] = useState("");
   const [entryFee, setEntryFee] = useState("5");
   const [minEntries, setMinEntries] = useState("3");
-  const [questions, setQuestions] = useState<QuestionDraft[]>([
-    emptyQuestion(),
-  ]);
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [questions, setQuestions] = useState<QuestionDraft[]>([emptyQuestion()]);
   const [createdSessionIds, setCreatedSessionIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    getRoomLeaderboard(roomId)
-      .then((res) => setLeaderboard(res.cumulative))
-      .catch(() => {});
-  }, [roomId]);
+  const { mutate, isPending, error } = useMutation({
+    mutationFn: () =>
+      createSession(roomId, {
+        scheduledAt: new Date(scheduledAt).toISOString(),
+        entryFee: Number(entryFee),
+        minEntries: Number(minEntries),
+        questions: questions.map((q) => ({
+          text: q.text,
+          options: q.options.filter(Boolean),
+          correctOption: q.correctOption,
+          timeLimitSec: q.timeLimitSec,
+        })),
+      }),
+    onSuccess: ({ sessionId }) => {
+      setCreatedSessionIds((ids) => [sessionId, ...ids]);
+      setQuestions([emptyQuestion()]);
+    },
+  });
 
   function updateQuestion(index: number, patch: Partial<QuestionDraft>) {
-    setQuestions((qs) =>
-      qs.map((q, i) => (i === index ? { ...q, ...patch } : q)),
-    );
+    setQuestions((qs) => qs.map((q, i) => (i === index ? { ...q, ...patch } : q)));
   }
 
   function updateOption(qIndex: number, oIndex: number, value: string) {
     setQuestions((qs) =>
       qs.map((q, i) =>
         i === qIndex
-          ? {
-              ...q,
-              options: q.options.map((o, j) => (j === oIndex ? value : o)),
-            }
+          ? { ...q, options: q.options.map((o, j) => (j === oIndex ? value : o)) }
           : q,
       ),
     );
@@ -63,35 +67,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
     Number(entryFee) > 0 &&
     questions.length > 0 &&
     questions.every(
-      (q) =>
-        q.text &&
-        q.correctOption &&
-        q.options.filter(Boolean).includes(q.correctOption),
+      (q) => q.text && q.correctOption && q.options.filter(Boolean).includes(q.correctOption),
     );
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      const { sessionId } = await createSession(roomId, {
-        scheduledAt: new Date(scheduledAt).toISOString(),
-        entryFee: Number(entryFee),
-        minEntries: Number(minEntries),
-        questions: questions.map((q) => ({
-          text: q.text,
-          options: q.options.filter(Boolean),
-          correctOption: q.correctOption,
-          timeLimitSec: q.timeLimitSec,
-        })),
-      });
-      setCreatedSessionIds((ids) => [sessionId, ...ids]);
-      setQuestions([emptyQuestion()]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create session");
-    } finally {
-      setSubmitting(false);
-    }
+    mutate();
   }
 
   return (
@@ -103,7 +84,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
       <section>
         <h2 className="text-lg font-semibold">Cumulative Leaderboard</h2>
-        {leaderboard.length === 0 ? (
+        {!leaderboard || leaderboard.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-500">No sessions played yet.</p>
         ) : (
           <ol className="mt-3 flex flex-col gap-1">
@@ -130,10 +111,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           <ul className="mt-2 flex flex-col gap-1">
             {createdSessionIds.map((id) => (
               <li key={id}>
-                <Link
-                  href={`/sessions/${id}`}
-                  className="text-sm underline underline-offset-2"
-                >
+                <Link href={`/sessions/${id}`} className="text-sm underline underline-offset-2">
                   /sessions/{id}
                 </Link>
               </li>
@@ -188,15 +166,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">
-                    Question {qIndex + 1}
-                  </span>
+                  <span className="text-sm font-medium">Question {qIndex + 1}</span>
                   {questions.length > 1 && (
                     <button
                       type="button"
-                      onClick={() =>
-                        setQuestions((qs) => qs.filter((_, i) => i !== qIndex))
-                      }
+                      onClick={() => setQuestions((qs) => qs.filter((_, i) => i !== qIndex))}
                       className="text-xs text-red-600 hover:underline"
                     >
                       Remove
@@ -207,9 +181,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                   required
                   placeholder="Question text"
                   value={q.text}
-                  onChange={(e) =>
-                    updateQuestion(qIndex, { text: e.target.value })
-                  }
+                  onChange={(e) => updateQuestion(qIndex, { text: e.target.value })}
                   className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-base outline-none focus:border-black dark:border-white/15 dark:focus:border-white"
                 />
                 <div className="flex flex-col gap-2">
@@ -219,26 +191,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
                         type="radio"
                         name={`correct-${qIndex}`}
                         checked={q.correctOption === opt && opt !== ""}
-                        onChange={() =>
-                          updateQuestion(qIndex, { correctOption: opt })
-                        }
+                        onChange={() => updateQuestion(qIndex, { correctOption: opt })}
                         disabled={!opt}
                       />
                       <input
                         placeholder={`Option ${oIndex + 1}`}
                         value={opt}
-                        onChange={(e) =>
-                          updateOption(qIndex, oIndex, e.target.value)
-                        }
+                        onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
                         className="flex-1 rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-black dark:border-white/15 dark:focus:border-white"
                       />
                     </div>
                   ))}
                   <button
                     type="button"
-                    onClick={() =>
-                      updateQuestion(qIndex, { options: [...q.options, ""] })
-                    }
+                    onClick={() => updateQuestion(qIndex, { options: [...q.options, ""] })}
                     className="self-start text-xs underline underline-offset-2"
                   >
                     Add option
@@ -250,11 +216,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     type="number"
                     min="1"
                     value={q.timeLimitSec}
-                    onChange={(e) =>
-                      updateQuestion(qIndex, {
-                        timeLimitSec: Number(e.target.value),
-                      })
-                    }
+                    onChange={(e) => updateQuestion(qIndex, { timeLimitSec: Number(e.target.value) })}
                     className="rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-black dark:border-white/15 dark:focus:border-white"
                   />
                 </label>
@@ -269,14 +231,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
             </button>
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error.message}</p>}
 
           <button
             type="submit"
-            disabled={submitting || !isValid}
+            disabled={isPending || !isValid}
             className="mt-2 rounded-full bg-black px-5 py-3 text-base font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
           >
-            {submitting ? "Scheduling…" : "Schedule Session"}
+            {isPending ? "Scheduling…" : "Schedule Session"}
           </button>
         </form>
       </section>
