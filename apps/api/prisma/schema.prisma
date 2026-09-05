@@ -1,0 +1,76 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Room {
+  id        String    @id @default(cuid())
+  hostId    String
+  title     String
+  topic     String?
+  schedule  String?
+  sessions  Session[]
+  createdAt DateTime  @default(now())
+}
+
+model Session {
+  id          String     @id @default(cuid())
+  roomId      String
+  room        Room       @relation(fields: [roomId], references: [id])
+  scheduledAt DateTime
+  entryFee    Decimal
+  currency    String     @default("NIM")
+  status      String     @default("scheduled")
+  minEntries  Int        @default(3)
+  questions   Question[]
+  entries     Entry[]
+  results     Result[]
+}
+
+model Question {
+  id            String   @id @default(cuid())
+  sessionId     String
+  session       Session  @relation(fields: [sessionId], references: [id])
+  text          String
+  options       Json
+  correctOption String
+  order         Int
+  timeLimitSec  Int      @default(15)
+}
+
+model Entry {
+  id            String   @id @default(cuid())
+  sessionId     String
+  session       Session  @relation(fields: [sessionId], references: [id])
+  userId        String
+  depositTxHash String?
+  answers       Answer[]
+}
+
+model Answer {
+  id             String  @id @default(cuid())
+  entryId        String
+  entry          Entry   @relation(fields: [entryId], references: [id])
+  questionId     String
+  selectedOption String
+  answeredAtMs   Int
+  isCorrect      Boolean
+}
+
+model Result {
+  id           String   @id @default(cuid())
+  sessionId    String
+  session      Session  @relation(fields: [sessionId], references: [id])
+  userId       String
+  score        Int
+  rank         Int
+  payoutAmount Decimal?
+  payoutTxHash String?
+}
