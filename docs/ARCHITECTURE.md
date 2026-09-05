@@ -1,15 +1,17 @@
 # Overtime — Architecture
 
 ## Stack & Why
+
 - **Next.js (App Router) + TypeScript** — same reasoning as TurnUp; also needs a fast, low-latency client for live question rendering.
 - **Tailwind CSS** — shared design system across both apps saves real time.
 - **TanStack Query** — room/session/leaderboard state for everything that isn't real-time.
 - **NestJS + socket.io** — this app leans harder on real-time than TurnUp: question broadcast, answer intake, and live leaderboard push all run over a socket.io namespace per session.
 - **PostgreSQL + Prisma** — rooms, sessions, questions, answers, results.
 - **@nimiq/mini-app-sdk** — entry-fee collection.
-- **Shares `@team/nimiq-settlement`** with TurnUp for entry-fee collection and payout-split settlement — same module, different call site (top-N split instead of refund/forfeit split).
+- **@nimiq/core** — custodial wallet + on-chain deposit verification and payout sending (`apps/api/src/nimiq`). Originally planned as a shared `@team/nimiq-settlement` package with TurnUp, but built directly inside `apps/api` instead — revisit extracting it only if TurnUp actually needs the same logic.
 
 ## System Diagram (text)
+
 ```
 [Participant's Nimiq Pay Wallet]
         |  (native approval — entry fee)
@@ -24,10 +26,11 @@
  questions, answers, results]         to all connected clients]
         |
         v
-[@team/nimiq-settlement] --> [Custodial NIM wallet] --> top-N payout transactions
+[NimiqService + NimiqClientService] --> [Custodial NIM wallet] --> top-N payout transactions
 ```
 
 ## Data Models (Prisma schema, abridged)
+
 ```prisma
 model Room {
   id         String    @id @default(cuid())
@@ -65,12 +68,13 @@ model Question {
 }
 
 model Entry {
-  id             String    @id @default(cuid())
-  sessionId      String
-  session        Session   @relation(fields: [sessionId], references: [id])
-  userId         String
-  depositTxHash  String?
-  answers        Answer[]
+  id              String    @id @default(cuid())
+  sessionId       String
+  session         Session   @relation(fields: [sessionId], references: [id])
+  userId          String
+  depositTxHash   String?
+  depositVerified Boolean   @default(false)
+  answers         Answer[]
 }
 
 model Answer {
@@ -81,6 +85,8 @@ model Answer {
   selectedOption String
   answeredAtMs   Int
   isCorrect      Boolean
+
+  @@unique([entryId, questionId])
 }
 
 model Result {
@@ -96,6 +102,7 @@ model Result {
 ```
 
 ## API Contracts
+
 ```
 POST   /rooms
   body: { title, topic?, schedule? }
@@ -117,9 +124,12 @@ POST   /sessions/:id/join
 
 POST   /sessions/:id/entries/:entryId/deposit
   body: { depositTxHash }
-  res:  { entryId, depositTxHash }
-  // Records the tx hash returned by sendBasicTransaction. Not yet verified on-chain —
-  // see the TODO in SessionsService.recordDeposit.
+  res:  { entryId, depositTxHash, depositVerified }
+  // Records the tx hash and attempts to verify it on-chain (recipient, amount,
+  // confirmed state) via the Nimiq client. depositVerified is false whenever
+  // that check fails OR the client isn't connected — see the known
+  // connectivity issue below. Never throws on a failed/unavailable check;
+  // the entry is recorded either way.
 
 WS     /sessions/:id   (socket.io namespace)
   server -> client: { type: "question", question: {...}, index, total }
@@ -128,14 +138,42 @@ WS     /sessions/:id   (socket.io namespace)
 
 POST   /sessions/:id/settle
   res:  { results: [{ userId, rank, payoutAmount, txHash }] }
-  // if entries < minEntries: session cancelled, all entry fees refunded instead
+  // if entries < minEntries: res: { refunded: true, entries: [{ userId, amount, txHash }] }
+  // Attempts a real payout/refund transaction from the custodial wallet for
+  // each entrant; txHash is null (not an error) whenever the client isn't
+  // connected — settlement still completes with correct computed amounts.
 
 GET    /rooms/:id/leaderboard
   res:  { cumulative: [{ userId, totalScore, sessionsPlayed }] }
 ```
 
 ## Third-Party Services, APIs, SDKs
-- `@nimiq/mini-app-sdk` — https://nimiq.dev/mini-apps
-- Nimiq backend signing — same open item as TurnUp; confirm the current recommended package against https://nimiq.dev before Week 1 build starts
+
+- `@nimiq/mini-app-sdk` — https://nimiq.dev/mini-apps — client-side entry-fee payment, verified against the actual published package
+- `@nimiq/core` (v2.21.0) — server-side custodial wallet (`NimiqService`) and live chain access (`NimiqClientService`)
 - `socket.io` — the real-time layer; heavier lift here than in TurnUp, budget real testing time under actual venue wifi conditions, not just localhost
 - Hosting: Vercel for the Next.js frontend, plus a small always-on Node host (e.g. Railway or Fly.io) for the NestJS/socket.io API — Vercel's serverless functions don't reliably hold persistent socket connections, so the real-time API should not run as serverless functions
+
+### Known issue: `@nimiq/core` Node.js client never reaches consensus (untested past this)
+
+In this dev environment, `Nimiq.Client` (TestAlbatross) connects to seed nodes at the
+transport level but every peer connection is dropped immediately, logging
+`TypeError: arg0.addEventListener is not a function` from inside the WASM bindings.
+Peer count never rises above 0 and consensus never establishes, even after 40+
+seconds. This reproduces the symptoms of an open upstream issue,
+[nimiq/core-rs-albatross#3101](https://github.com/nimiq/core-rs-albatross/issues/3101)
+("Light Web Node panic after restart" — same `addEventListener` error). A related
+issue (nimiq/core-rs-albatross#3417, "Node.js/WebContainer compatibility") was closed
+without a documented fix.
+
+Because of this, `verifyDeposit`/`sendPayout` in `NimiqClientService` are implemented
+against the verified API (`getTransaction`, `TransactionBuilder.newBasic`,
+`sendTransaction`, etc.) but have **not** been confirmed against a real network — the
+client itself never gets past `connecting`. `SessionsService` degrades gracefully when
+this happens (records deposits as unverified, settles with `txHash: null`) rather than
+blocking or crashing, but this needs to be re-tested on the actual deploy target
+(Railway/Fly.io, a different Node version, or a real machine with unrestricted
+outbound networking) before relying on it — it may be specific to this sandbox's
+network egress rather than the library itself. There are currently no public Nimiq
+open RPC servers listed either (`nimiq.dev/rpc/open-servers` shows "No data" for both
+mainnet and testnet), so an RPC-based fallback isn't available out of the box.

@@ -46,12 +46,13 @@ model Question {
 }
 
 model Entry {
-  id            String   @id @default(cuid())
-  sessionId     String
-  session       Session  @relation(fields: [sessionId], references: [id])
-  userId        String
-  depositTxHash String?
-  answers       Answer[]
+  id              String   @id @default(cuid())
+  sessionId       String
+  session         Session  @relation(fields: [sessionId], references: [id])
+  userId          String
+  depositTxHash   String?
+  depositVerified Boolean  @default(false)
+  answers         Answer[]
 }
 
 model Answer {

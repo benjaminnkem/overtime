@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NimiqService } from '../nimiq/nimiq.service';
+import { NimiqClientService } from '../nimiq/nimiq-client.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { JoinSessionDto } from './dto/join-session.dto';
 
@@ -13,9 +15,12 @@ const LUNA_PER_NIM = 100_000;
 
 @Injectable()
 export class SessionsService {
+  private readonly logger = new Logger(SessionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly nimiq: NimiqService,
+    private readonly nimiqClient: NimiqClientService,
   ) {}
 
   async create(roomId: string, dto: CreateSessionDto) {
@@ -97,18 +102,42 @@ export class SessionsService {
   async recordDeposit(entryId: string, depositTxHash: string) {
     const entry = await this.prisma.entry.findUnique({
       where: { id: entryId },
+      include: { session: true },
     });
     if (!entry) {
       throw new NotFoundException(`Entry ${entryId} not found`);
     }
+
+    const custodialAddress = this.nimiq.getCustodialAddress();
+    const minLuna = Math.round(Number(entry.session.entryFee) * LUNA_PER_NIM);
+
+    let depositVerified = false;
+    if (custodialAddress) {
+      try {
+        const check = await this.nimiqClient.verifyDeposit(
+          depositTxHash,
+          custodialAddress,
+          minLuna,
+        );
+        depositVerified = check.verified;
+        if (!check.verified) {
+          this.logger.warn(
+            `Deposit ${depositTxHash} for entry ${entryId} did not verify: ${check.reason}`,
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Could not verify deposit ${depositTxHash} for entry ${entryId}: ${(error as Error).message}`,
+        );
+      }
+    }
+
     await this.prisma.entry.update({
       where: { id: entryId },
-      data: { depositTxHash },
+      data: { depositTxHash, depositVerified },
     });
-    // TODO: verify the transaction actually landed on-chain (client.getTransaction)
-    // and that its recipient/value match this session's custodial address and
-    // entry fee, once the settlement module holds a connected Nimiq client.
-    return { entryId, depositTxHash };
+
+    return { entryId, depositTxHash, depositVerified };
   }
 
   async settle(sessionId: string) {
@@ -125,19 +154,29 @@ export class SessionsService {
       );
     }
 
+    const custodialKeyPair = this.nimiq.getCustodialKeyPair();
+
     if (session.entries.length < session.minEntries) {
       await this.prisma.session.update({
         where: { id: sessionId },
         data: { status: 'refunded' },
       });
-      // TODO: trigger real refund transactions via the shared nimiq-settlement module.
-      return {
-        refunded: true,
-        entries: session.entries.map((entry) => ({
-          userId: entry.userId,
-          amount: session.entryFee,
-        })),
-      };
+
+      const entries = await Promise.all(
+        session.entries.map(async (entry) => {
+          const amountLuna = Math.round(
+            Number(session.entryFee) * LUNA_PER_NIM,
+          );
+          const txHash = await this.trySendPayout(
+            custodialKeyPair,
+            entry.userId,
+            amountLuna,
+          );
+          return { userId: entry.userId, amount: session.entryFee, txHash };
+        }),
+      );
+
+      return { refunded: true, entries };
     }
 
     const ranked = session.entries
@@ -163,10 +202,19 @@ export class SessionsService {
     const splitTotal = splitSlice.reduce((sum, share) => sum + share, 0);
 
     const results = await Promise.all(
-      ranked.map((entrant, index) => {
+      ranked.map(async (entrant, index) => {
         const rank = index + 1;
         const share = index < payoutCount ? splitSlice[index] / splitTotal : 0;
         const payoutAmount = share > 0 ? pool * share : null;
+        const payoutTxHash =
+          payoutAmount !== null
+            ? await this.trySendPayout(
+                custodialKeyPair,
+                entrant.userId,
+                Math.round(payoutAmount * LUNA_PER_NIM),
+              )
+            : null;
+
         return this.prisma.result.create({
           data: {
             sessionId,
@@ -174,8 +222,7 @@ export class SessionsService {
             score: entrant.score,
             rank,
             payoutAmount,
-            // TODO: replace with the real payout tx hash from nimiq-settlement.
-            payoutTxHash: null,
+            payoutTxHash,
           },
         });
       }),
@@ -194,5 +241,31 @@ export class SessionsService {
         txHash: r.payoutTxHash,
       })),
     };
+  }
+
+  /**
+   * Attempts a real payout transaction; returns null (rather than throwing)
+   * when the custodial wallet isn't configured or the Nimiq client isn't
+   * connected, so settlement still completes with computed amounts even
+   * when the on-chain send can't happen right now.
+   */
+  private async trySendPayout(
+    custodialKeyPair: ReturnType<NimiqService['getCustodialKeyPair']>,
+    recipientAddress: string,
+    amountLuna: number,
+  ): Promise<string | null> {
+    if (!custodialKeyPair || amountLuna <= 0) return null;
+    try {
+      return await this.nimiqClient.sendPayout(
+        custodialKeyPair,
+        recipientAddress,
+        amountLuna,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not send payout to ${recipientAddress}: ${(error as Error).message}`,
+      );
+      return null;
+    }
   }
 }
