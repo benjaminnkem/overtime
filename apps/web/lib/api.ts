@@ -49,6 +49,7 @@ export interface JoinResult {
   entryId: string;
   paymentRequest: {
     amount: string;
+    amountLuna: number;
     currency: string;
     recipient: string | null;
   };
@@ -92,6 +93,17 @@ export function joinSession(sessionId: string, walletAddress: string) {
     method: "POST",
     body: JSON.stringify({ walletAddress }),
   });
+}
+
+export function recordDeposit(
+  sessionId: string,
+  entryId: string,
+  depositTxHash: string,
+) {
+  return request<{ entryId: string; depositTxHash: string }>(
+    `/sessions/${sessionId}/entries/${entryId}/deposit`,
+    { method: "POST", body: JSON.stringify({ depositTxHash }) },
+  );
 }
 
 export function settleSession(sessionId: string) {

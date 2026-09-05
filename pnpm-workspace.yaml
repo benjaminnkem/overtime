@@ -4,6 +4,9 @@ packages:
 allowBuilds:
   '@parcel/watcher': false
   '@prisma/engines': true
+  bufferutil: true
+  es5-ext: true
   esbuild: true
   prisma: true
   unrs-resolver: false
+  utf-8-validate: true

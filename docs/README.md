@@ -17,7 +17,7 @@ pnpm dev
 
 # Backend (NestJS + socket.io)
 cd ../api
-cp .env.example .env         # DATABASE_URL, NIMIQ_CUSTODIAL_WALLET_SEED
+cp .env.example .env         # DATABASE_URL, NIMIQ_CUSTODIAL_PRIVATE_KEY
 pnpm prisma migrate dev
 pnpm start:dev
 ```

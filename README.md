@@ -103,7 +103,7 @@ overtime/
 
 - Node.js `>=24`
 - pnpm `11.25.0` (see `packageManager` in [`package.json`](package.json))
-- A local PostgreSQL instance (once the Prisma schema lands — see [Project Status](#project-status))
+- A local PostgreSQL instance
 
 ### Installation
 
@@ -129,16 +129,18 @@ Or run everything through Turborepo from the repo root:
 pnpm dev
 ```
 
-Environment variables (`.env.local` for `apps/web`, `.env` for `apps/api`) aren't scaffolded yet. Once the Nimiq integration and Prisma schema land, expect at minimum:
+Copy each app's example env file before running it:
 
-- `apps/web`: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_NIMIQ_APP_ORIGIN`
-- `apps/api`: `DATABASE_URL`, `NIMIQ_CUSTODIAL_WALLET_SEED`
-
-Confirm the exact required `@nimiq/mini-app-sdk` env keys against the current Nimiq docs before relying on this list.
+- `apps/web/.env.local.example` → `.env.local`: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`
+- `apps/api/.env.example` → `.env`: `DATABASE_URL`, `NIMIQ_CUSTODIAL_PRIVATE_KEY` (a hex private key — see the comment in the example file for how to generate a throwaway one), `PORT`
 
 ## Project Status
 
-Actively in development for a **September 18, 2026** hackathon submission deadline. Currently at the foundation stage — `apps/web` and `apps/api` are scaffolded; the real-time gateway, Prisma schema, and Nimiq settlement flow are in progress.
+Actively in development for a **September 18, 2026** hackathon submission deadline. The full MVP loop works end-to-end: create a Room, schedule a Session, join, live question broadcast with a server-timestamped countdown, live leaderboard, and settlement (top-N payout split or minimum-entries refund).
+
+Nimiq integration is partial: the frontend uses the real `@nimiq/mini-app-sdk` to detect the user's wallet and collect the entry fee via `sendBasicTransaction` when running inside Nimiq Pay (falls back to manual entry outside it, e.g. for local dev), and the backend derives a real custodial NIM address via `@nimiq/core`. Still open: verifying deposits on-chain and actually sending payout transactions — both need a connected Nimiq client, not just address derivation.
+
+Track detailed phase-by-phase progress in [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md).
 
 Track detailed phase-by-phase progress in [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md).
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   getSession,
   joinSession,
+  recordDeposit,
   settleSession,
   type SessionInfo,
   type SettleResult,
@@ -13,6 +14,8 @@ import {
   type LiveQuestion,
   type LiveLeaderboard,
 } from "@/lib/socket";
+import { getNimiqProvider } from "@/lib/nimiq";
+import type { NimiqProvider } from "@nimiq/mini-app-sdk";
 
 function entryStorageKey(sessionId: string) {
   return `overtime:entry:${sessionId}`;
@@ -24,6 +27,17 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
   const [entryId, setEntryId] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
+
+  const [nimiqProvider, setNimiqProvider] = useState<NimiqProvider | null>(
+    null,
+  );
+  const [nimiqStatus, setNimiqStatus] = useState<
+    "checking" | "available" | "unavailable"
+  >("checking");
+  const [paymentStatus, setPaymentStatus] = useState<
+    "idle" | "paying" | "paid" | "error"
+  >("idle");
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const [questionState, setQuestionState] = useState<LiveQuestion | null>(null);
   const [answered, setAnswered] = useState(false);
@@ -52,6 +66,19 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from a browser-only store, not a derived-state loop
     if (stored) setEntryId(stored);
   }, [sessionId]);
+
+  useEffect(() => {
+    getNimiqProvider()
+      .then(async (provider) => {
+        setNimiqProvider(provider);
+        setNimiqStatus("available");
+        const accounts = await provider.listAccounts();
+        if (Array.isArray(accounts) && accounts[0]) {
+          setWalletAddress(accounts[0]);
+        }
+      })
+      .catch(() => setNimiqStatus("unavailable"));
+  }, []);
 
   useEffect(() => {
     const socket = getSocket();
@@ -85,12 +112,27 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
     setJoinError(null);
     setJoining(true);
     try {
-      const { entryId: newEntryId } = await joinSession(
+      const { entryId: newEntryId, paymentRequest } = await joinSession(
         sessionId,
         walletAddress,
       );
       localStorage.setItem(entryStorageKey(sessionId), newEntryId);
       setEntryId(newEntryId);
+
+      if (nimiqProvider && paymentRequest.recipient) {
+        setPaymentStatus("paying");
+        const result = await nimiqProvider.sendBasicTransaction({
+          recipient: paymentRequest.recipient,
+          value: paymentRequest.amountLuna,
+        });
+        if (typeof result === "string") {
+          await recordDeposit(sessionId, newEntryId, result);
+          setPaymentStatus("paid");
+        } else {
+          setPaymentStatus("error");
+          setPaymentError(result.error.message);
+        }
+      }
     } catch (err) {
       setJoinError(
         err instanceof Error ? err.message : "Failed to join session",
@@ -159,31 +201,45 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
             Your wallet address
             <input
               required
+              readOnly={nimiqStatus === "available"}
               value={walletAddress}
               onChange={(e) => setWalletAddress(e.target.value)}
               placeholder="NQ..."
-              className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-base outline-none focus:border-black dark:border-white/15 dark:focus:border-white"
+              className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-base outline-none read-only:opacity-70 focus:border-black dark:border-white/15 dark:focus:border-white"
             />
           </label>
           {joinError && <p className="text-sm text-red-600">{joinError}</p>}
           <button
             type="submit"
-            disabled={joining}
+            disabled={joining || nimiqStatus === "checking"}
             className="rounded-full bg-black px-5 py-3 text-base font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
           >
             {joining
-              ? "Joining…"
+              ? paymentStatus === "paying"
+                ? "Confirm in Nimiq Pay…"
+                : "Joining…"
               : `Join & Pay ${sessionInfo?.entryFee ?? ""} ${sessionInfo?.currency ?? ""}`}
           </button>
           <p className="text-xs text-zinc-500">
-            Payment collection isn&apos;t wired to a real Nimiq wallet yet —
-            joining records your entry without moving funds.
+            {nimiqStatus === "available"
+              ? "Detected your Nimiq Pay wallet — you'll get a native confirmation dialog for the entry fee."
+              : "Not running inside Nimiq Pay, so payment collection isn't wired to a real wallet in this mode — joining records your entry without moving funds."}
           </p>
         </form>
       ) : (
-        <p className="text-sm text-zinc-500">
-          You&apos;re in as entry <span className="font-mono">{entryId}</span>
-        </p>
+        <div className="flex flex-col gap-1 text-sm text-zinc-500">
+          <p>
+            You&apos;re in as entry <span className="font-mono">{entryId}</span>
+          </p>
+          {paymentStatus === "paid" && (
+            <p className="text-emerald-600 dark:text-emerald-400">
+              Entry fee paid.
+            </p>
+          )}
+          {paymentStatus === "error" && (
+            <p className="text-red-600">Payment failed: {paymentError}</p>
+          )}
+        </div>
       )}
 
       <section className="flex flex-col gap-4">

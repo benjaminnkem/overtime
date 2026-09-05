@@ -110,7 +110,16 @@ GET    /sessions/:id
 
 POST   /sessions/:id/join
   body: { walletAddress }
-  res:  { entryId, paymentRequest }
+  res:  { entryId, paymentRequest: { amount, amountLuna, currency, recipient } }
+  // recipient is the custodial wallet's real NIM address once NIMIQ_CUSTODIAL_PRIVATE_KEY
+  // is configured server-side, null otherwise. The client pays it directly via
+  // @nimiq/mini-app-sdk's nimiq.sendBasicTransaction({ recipient, value: amountLuna }).
+
+POST   /sessions/:id/entries/:entryId/deposit
+  body: { depositTxHash }
+  res:  { entryId, depositTxHash }
+  // Records the tx hash returned by sendBasicTransaction. Not yet verified on-chain —
+  // see the TODO in SessionsService.recordDeposit.
 
 WS     /sessions/:id   (socket.io namespace)
   server -> client: { type: "question", question: {...}, index, total }

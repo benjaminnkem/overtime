@@ -4,14 +4,19 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NimiqService } from '../nimiq/nimiq.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { JoinSessionDto } from './dto/join-session.dto';
 
 const PAYOUT_SPLIT = [0.5, 0.3, 0.2];
+const LUNA_PER_NIM = 100_000;
 
 @Injectable()
 export class SessionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly nimiq: NimiqService,
+  ) {}
 
   async create(roomId: string, dto: CreateSessionDto) {
     const room = await this.prisma.room.findUnique({ where: { id: roomId } });
@@ -79,15 +84,31 @@ export class SessionsService {
       data: { sessionId, userId: dto.walletAddress },
     });
 
-    // TODO: replace with a real @nimiq/mini-app-sdk payment request once the
-    // exact payment-request method is confirmed against the live Nimiq docs.
     const paymentRequest = {
       amount: session.entryFee,
+      amountLuna: Math.round(Number(session.entryFee) * LUNA_PER_NIM),
       currency: session.currency,
-      recipient: null as string | null,
+      recipient: this.nimiq.getCustodialAddress(),
     };
 
     return { entryId: entry.id, paymentRequest };
+  }
+
+  async recordDeposit(entryId: string, depositTxHash: string) {
+    const entry = await this.prisma.entry.findUnique({
+      where: { id: entryId },
+    });
+    if (!entry) {
+      throw new NotFoundException(`Entry ${entryId} not found`);
+    }
+    await this.prisma.entry.update({
+      where: { id: entryId },
+      data: { depositTxHash },
+    });
+    // TODO: verify the transaction actually landed on-chain (client.getTransaction)
+    // and that its recipient/value match this session's custodial address and
+    // entry fee, once the settlement module holds a connected Nimiq client.
+    return { entryId, depositTxHash };
   }
 
   async settle(sessionId: string) {
