@@ -244,6 +244,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
                   value={q.text}
                   onChange={(e) => updateQuestion(qIndex, { text: e.target.value })}
                 />
+                {!q.correctOption && (
+                  <p className="font-mono text-xs text-muted">
+                    Tap <span className="text-lime">✓</span> next to the correct answer
+                  </p>
+                )}
                 <div className="flex flex-col gap-2">
                   {q.options.map((opt, oIndex) => {
                     const isCorrect = q.correctOption === opt && opt !== "";
