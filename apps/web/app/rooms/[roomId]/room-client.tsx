@@ -3,8 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createSession, getRoomLeaderboard, getRoomSessions } from "@/lib/api";
+import { createSession, getRoom, getRoomLeaderboard, getRoomSessions } from "@/lib/api";
 import { getStoredHostToken } from "@/lib/host-token";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Field, Input } from "@/components/ui/field";
+import { Leaderboard } from "@/components/leaderboard";
 
 interface QuestionDraft {
   text: string;
@@ -17,8 +22,19 @@ function emptyQuestion(): QuestionDraft {
   return { text: "", options: ["", ""], correctOption: "", timeLimitSec: 15 };
 }
 
+const STATUS_TONE = {
+  scheduled: "neutral",
+  settled: "lime",
+  refunded: "coral",
+} as const;
+
 export function RoomClient({ roomId }: { roomId: string }) {
   const queryClient = useQueryClient();
+
+  const { data: room } = useQuery({
+    queryKey: ["room", roomId],
+    queryFn: () => getRoom(roomId),
+  });
 
   const { data: leaderboard } = useQuery({
     queryKey: ["room-leaderboard", roomId],
@@ -34,9 +50,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [scheduledAt, setScheduledAt] = useState("");
   const [entryFee, setEntryFee] = useState("5");
   const [minEntries, setMinEntries] = useState("3");
-  const [questions, setQuestions] = useState<QuestionDraft[]>([
-    emptyQuestion(),
-  ]);
+  const [questions, setQuestions] = useState<QuestionDraft[]>([emptyQuestion()]);
   const [hostToken, setHostToken] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,9 +61,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const { mutate, isPending, error } = useMutation({
     mutationFn: () => {
       if (!hostToken)
-        throw new Error(
-          "Only the host who created this room can schedule sessions",
-        );
+        throw new Error("Only the host who created this room can schedule sessions");
       return createSession(
         roomId,
         {
@@ -73,19 +85,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
   });
 
   function updateQuestion(index: number, patch: Partial<QuestionDraft>) {
-    setQuestions((qs) =>
-      qs.map((q, i) => (i === index ? { ...q, ...patch } : q)),
-    );
+    setQuestions((qs) => qs.map((q, i) => (i === index ? { ...q, ...patch } : q)));
   }
 
   function updateOption(qIndex: number, oIndex: number, value: string) {
     setQuestions((qs) =>
       qs.map((q, i) =>
         i === qIndex
-          ? {
-              ...q,
-              options: q.options.map((o, j) => (j === oIndex ? value : o)),
-            }
+          ? { ...q, options: q.options.map((o, j) => (j === oIndex ? value : o)) }
           : q,
       ),
     );
@@ -96,10 +103,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     Number(entryFee) > 0 &&
     questions.length > 0 &&
     questions.every(
-      (q) =>
-        q.text &&
-        q.correctOption &&
-        q.options.filter(Boolean).includes(q.correctOption),
+      (q) => q.text && q.correctOption && q.options.filter(Boolean).includes(q.correctOption),
     );
 
   function handleSubmit(e: React.FormEvent) {
@@ -107,211 +111,203 @@ export function RoomClient({ roomId }: { roomId: string }) {
     mutate();
   }
 
+  const leaderboardEntries = (leaderboard ?? []).map((entry, i) => ({
+    userId: entry.userId,
+    rank: i + 1,
+    detail: `${entry.totalScore} pts · ${entry.sessionsPlayed} sessions`,
+  }));
+
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-10">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">Room</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">{roomId}</p>
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-10 sm:py-14">
+      <header className="animate-rise-in">
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">
+          {room?.topic || "Room"}
+        </p>
+        <h1 className="mt-1 font-display text-3xl font-bold tracking-tight text-paper sm:text-4xl">
+          {room?.title ?? "Loading…"}
+        </h1>
+        <p className="mt-2 break-all font-mono text-xs text-muted">{roomId}</p>
       </header>
 
-      <section>
-        <h2 className="text-lg font-semibold">Cumulative Leaderboard</h2>
-        {!leaderboard || leaderboard.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-500">No sessions played yet.</p>
-        ) : (
-          <ol className="mt-3 flex flex-col gap-1">
-            {leaderboard.map((entry, i) => (
-              <li
-                key={entry.userId}
-                className="flex items-center justify-between rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10"
-              >
-                <span>
-                  #{i + 1} {entry.userId}
-                </span>
-                <span className="text-zinc-500">
-                  {entry.totalScore} pts · {entry.sessionsPlayed} sessions
-                </span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <Card className="animate-rise-in p-6 sm:p-8">
+        <h2 className="font-display text-lg font-semibold text-paper">
+          Cumulative Leaderboard
+        </h2>
+        <div className="mt-4">
+          <Leaderboard entries={leaderboardEntries} emptyLabel="No sessions played yet." />
+        </div>
+      </Card>
 
-      <section>
-        <h2 className="text-lg font-semibold">Sessions</h2>
+      <Card className="animate-rise-in p-6 sm:p-8">
+        <h2 className="font-display text-lg font-semibold text-paper">Sessions</h2>
         {!sessions || sessions.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-500">No sessions scheduled yet.</p>
+          <p className="mt-4 text-sm text-muted">No sessions scheduled yet.</p>
         ) : (
-          <ul className="mt-3 flex flex-col gap-1">
+          <ul className="mt-4 flex flex-col gap-2">
             {sessions.map((session) => (
               <li key={session.id}>
                 <Link
                   href={`/sessions/${session.id}`}
-                  className="flex items-center justify-between rounded-lg border border-black/10 px-3 py-2 text-sm hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
+                  className="flex flex-col gap-2 rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-lime/40 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <span>
+                  <span className="font-display text-sm text-paper">
                     {new Date(session.scheduledAt).toLocaleString(undefined, {
                       dateStyle: "medium",
                       timeStyle: "short",
                     })}
                   </span>
-                  <span className="text-zinc-500">
-                    {session.entryFee} {session.currency} · {session.entryCount} joined ·{" "}
-                    {session.status}
+                  <span className="flex items-center gap-3 font-mono text-xs text-muted">
+                    <span>
+                      {session.entryFee} {session.currency}
+                    </span>
+                    <span>{session.entryCount} joined</span>
+                    <Badge
+                      tone={STATUS_TONE[session.status as keyof typeof STATUS_TONE] ?? "neutral"}
+                    >
+                      {session.status}
+                    </Badge>
                   </span>
                 </Link>
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </Card>
 
-      <section>
-        <h2 className="text-lg font-semibold">Schedule a Session</h2>
+      <Card className="animate-rise-in p-6 sm:p-8">
+        <h2 className="font-display text-lg font-semibold text-paper">Schedule a Session</h2>
         {!hostToken && (
-          <p className="mt-2 text-sm text-zinc-500">
+          <p className="mt-2 text-sm text-muted">
             Only the host who created this room can schedule sessions.
           </p>
         )}
         <form
           onSubmit={handleSubmit}
-          className={`mt-3 flex flex-col gap-4 ${!hostToken ? "pointer-events-none opacity-40" : ""}`}
+          className={`mt-5 flex flex-col gap-5 ${!hostToken ? "pointer-events-none opacity-40" : ""}`}
         >
-          <div className="flex gap-4">
-            <label className="flex flex-1 flex-col gap-1 text-sm font-medium">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field className="sm:col-span-1">
               Scheduled at
-              <input
+              <Input
                 required
                 type="datetime-local"
                 value={scheduledAt}
                 onChange={(e) => setScheduledAt(e.target.value)}
-                className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-base outline-none focus:border-black dark:border-white/15 dark:focus:border-white"
               />
-            </label>
-            <label className="flex w-28 flex-col gap-1 text-sm font-medium">
+            </Field>
+            <Field>
               Entry fee (NIM)
-              <input
+              <Input
                 required
                 type="number"
                 min="0"
                 step="0.01"
                 value={entryFee}
                 onChange={(e) => setEntryFee(e.target.value)}
-                className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-base outline-none focus:border-black dark:border-white/15 dark:focus:border-white"
               />
-            </label>
-            <label className="flex w-28 flex-col gap-1 text-sm font-medium">
+            </Field>
+            <Field>
               Min entries
-              <input
+              <Input
                 required
                 type="number"
                 min="1"
                 value={minEntries}
                 onChange={(e) => setMinEntries(e.target.value)}
-                className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-base outline-none focus:border-black dark:border-white/15 dark:focus:border-white"
               />
-            </label>
+            </Field>
           </div>
 
           <div className="flex flex-col gap-4">
             {questions.map((q, qIndex) => (
               <div
                 key={qIndex}
-                className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10"
+                className="flex flex-col gap-3 rounded-xl border border-border bg-surface-2/60 p-4"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">
+                  <span className="font-mono text-xs uppercase tracking-wider text-muted">
                     Question {qIndex + 1}
                   </span>
                   {questions.length > 1 && (
                     <button
                       type="button"
-                      onClick={() =>
-                        setQuestions((qs) => qs.filter((_, i) => i !== qIndex))
-                      }
-                      className="text-xs text-red-600 hover:underline"
+                      onClick={() => setQuestions((qs) => qs.filter((_, i) => i !== qIndex))}
+                      className="font-mono text-xs uppercase tracking-wider text-coral hover:underline"
                     >
                       Remove
                     </button>
                   )}
                 </div>
-                <input
+                <Input
                   required
                   placeholder="Question text"
                   value={q.text}
-                  onChange={(e) =>
-                    updateQuestion(qIndex, { text: e.target.value })
-                  }
-                  className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-base outline-none focus:border-black dark:border-white/15 dark:focus:border-white"
+                  onChange={(e) => updateQuestion(qIndex, { text: e.target.value })}
                 />
                 <div className="flex flex-col gap-2">
-                  {q.options.map((opt, oIndex) => (
-                    <div key={oIndex} className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name={`correct-${qIndex}`}
-                        checked={q.correctOption === opt && opt !== ""}
-                        onChange={() =>
-                          updateQuestion(qIndex, { correctOption: opt })
-                        }
-                        disabled={!opt}
-                      />
-                      <input
-                        placeholder={`Option ${oIndex + 1}`}
-                        value={opt}
-                        onChange={(e) =>
-                          updateOption(qIndex, oIndex, e.target.value)
-                        }
-                        className="flex-1 rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-black dark:border-white/15 dark:focus:border-white"
-                      />
-                    </div>
-                  ))}
+                  {q.options.map((opt, oIndex) => {
+                    const isCorrect = q.correctOption === opt && opt !== "";
+                    return (
+                      <div key={oIndex} className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={!opt}
+                          onClick={() => updateQuestion(qIndex, { correctOption: opt })}
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border font-mono text-sm transition-colors disabled:opacity-30 ${
+                            isCorrect
+                              ? "border-lime bg-lime text-lime-ink"
+                              : "border-border text-muted hover:border-lime/50"
+                          }`}
+                          aria-label="Mark as correct answer"
+                        >
+                          ✓
+                        </button>
+                        <Input
+                          placeholder={`Option ${oIndex + 1}`}
+                          value={opt}
+                          onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
+                          className="flex-1"
+                        />
+                      </div>
+                    );
+                  })}
                   <button
                     type="button"
-                    onClick={() =>
-                      updateQuestion(qIndex, { options: [...q.options, ""] })
-                    }
-                    className="self-start text-xs underline underline-offset-2"
+                    onClick={() => updateQuestion(qIndex, { options: [...q.options, ""] })}
+                    className="self-start font-mono text-xs uppercase tracking-wider text-muted hover:text-lime"
                   >
-                    Add option
+                    + Add option
                   </button>
                 </div>
-                <label className="flex w-32 flex-col gap-1 text-xs font-medium">
+                <Field className="w-32">
                   Time limit (sec)
-                  <input
+                  <Input
                     type="number"
                     min="1"
                     value={q.timeLimitSec}
-                    onChange={(e) =>
-                      updateQuestion(qIndex, {
-                        timeLimitSec: Number(e.target.value),
-                      })
-                    }
-                    className="rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-black dark:border-white/15 dark:focus:border-white"
+                    onChange={(e) => updateQuestion(qIndex, { timeLimitSec: Number(e.target.value) })}
                   />
-                </label>
+                </Field>
               </div>
             ))}
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => setQuestions((qs) => [...qs, emptyQuestion()])}
-              className="self-start rounded-full border border-black/10 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+              className="self-start"
             >
               + Add question
-            </button>
+            </Button>
           </div>
 
-          {error && <p className="text-sm text-red-600">{error.message}</p>}
+          {error && <p className="text-sm text-coral">{error.message}</p>}
 
-          <button
-            type="submit"
-            disabled={isPending || !isValid || !hostToken}
-            className="mt-2 rounded-full bg-black px-5 py-3 text-base font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-          >
+          <Button type="submit" disabled={isPending || !isValid || !hostToken} className="w-full">
             {isPending ? "Scheduling…" : "Schedule Session"}
-          </button>
+          </Button>
         </form>
-      </section>
+      </Card>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getSession,
   joinSession,
@@ -9,20 +10,24 @@ import {
   settleSession,
   type SettleResult,
 } from "@/lib/api";
-import {
-  getSocket,
-  type LiveQuestion,
-  type LiveLeaderboard,
-} from "@/lib/socket";
+import { getSocket, type LiveQuestion, type LiveLeaderboard } from "@/lib/socket";
 import { getNimiqProvider } from "@/lib/nimiq";
 import { getStoredHostToken } from "@/lib/host-token";
 import type { NimiqProvider } from "@nimiq/mini-app-sdk";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Field, Input } from "@/components/ui/field";
+import { LiveDot } from "@/components/live-dot";
+import { Leaderboard, type LeaderboardEntry } from "@/components/leaderboard";
 
 function entryStorageKey(sessionId: string) {
   return `overtime:entry:${sessionId}`;
 }
 
 export function SessionClient({ sessionId }: { sessionId: string }) {
+  const queryClient = useQueryClient();
+
   const { data: sessionInfo } = useQuery({
     queryKey: ["session", sessionId],
     queryFn: () => getSession(sessionId),
@@ -31,15 +36,11 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
   const [walletAddress, setWalletAddress] = useState("");
   const [entryId, setEntryId] = useState<string | null>(null);
 
-  const [nimiqProvider, setNimiqProvider] = useState<NimiqProvider | null>(
-    null,
+  const [nimiqProvider, setNimiqProvider] = useState<NimiqProvider | null>(null);
+  const [nimiqStatus, setNimiqStatus] = useState<"checking" | "available" | "unavailable">(
+    "checking",
   );
-  const [nimiqStatus, setNimiqStatus] = useState<
-    "checking" | "available" | "unavailable"
-  >("checking");
-  const [paymentStatus, setPaymentStatus] = useState<
-    "idle" | "paying" | "paid" | "error"
-  >("idle");
+  const [paymentStatus, setPaymentStatus] = useState<"idle" | "paying" | "paid" | "error">("idle");
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const [questionState, setQuestionState] = useState<LiveQuestion | null>(null);
@@ -93,16 +94,13 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     if (!questionState || answered) return;
-    const interval = setInterval(() => setNow(Date.now()), 250);
+    const interval = setInterval(() => setNow(Date.now()), 100);
     return () => clearInterval(interval);
   }, [questionState, answered]);
 
   const joinMutation = useMutation({
     mutationFn: async () => {
-      const { entryId: newEntryId, paymentRequest } = await joinSession(
-        sessionId,
-        walletAddress,
-      );
+      const { entryId: newEntryId, paymentRequest } = await joinSession(sessionId, walletAddress);
       localStorage.setItem(entryStorageKey(sessionId), newEntryId);
       setEntryId(newEntryId);
 
@@ -121,17 +119,20 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
         }
       }
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+    },
   });
 
   const settleMutation = useMutation({
     mutationFn: () => {
-      if (!hostToken)
-        throw new Error(
-          "Only the host who created this room can settle sessions",
-        );
+      if (!hostToken) throw new Error("Only the host who created this room can settle sessions");
       return settleSession(sessionId, hostToken);
     },
-    onSuccess: setSettleResult,
+    onSuccess: (result) => {
+      setSettleResult(result);
+      queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+    },
   });
 
   function handleJoin(e: React.FormEvent) {
@@ -141,11 +142,7 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
 
   function startQuestion(index: number) {
     if (!hostToken) return;
-    getSocket().emit("host:startQuestion", {
-      sessionId,
-      questionIndex: index,
-      hostToken,
-    });
+    getSocket().emit("host:startQuestion", { sessionId, questionIndex: index, hostToken });
   }
 
   function submitAnswer(option: string) {
@@ -161,195 +158,189 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
   }
 
   const nextIndex = questionState ? questionState.index + 1 : 0;
-  const allQuestionsDone = questionState
-    ? questionState.index + 1 >= questionState.total
-    : false;
-  const secondsLeft = questionState
-    ? Math.max(
-        0,
-        questionState.question.timeLimitSec -
-          Math.floor((now - questionState.broadcastAtMs) / 1000),
-      )
+  const allQuestionsDone = questionState ? questionState.index + 1 >= questionState.total : false;
+  const msLeft = questionState
+    ? Math.max(0, questionState.question.timeLimitSec * 1000 - (now - questionState.broadcastAtMs))
     : 0;
+  const secondsLeft = Math.ceil(msLeft / 1000);
+  const timePct = questionState ? msLeft / (questionState.question.timeLimitSec * 1000) : 0;
+  const urgent = timePct < 0.3;
+
+  const liveEntries: LeaderboardEntry[] = rankings.map((r) => ({
+    userId: r.userId,
+    rank: r.rank,
+    detail: `${r.score} correct`,
+  }));
+
+  const settleEntries: LeaderboardEntry[] = settleResult?.refunded
+    ? (settleResult.entries ?? []).map((e, i) => ({
+        userId: e.userId,
+        rank: i + 1,
+        detail: `${e.amount} refunded`,
+      }))
+    : (settleResult?.results ?? []).map((r) => ({
+        userId: r.userId,
+        rank: r.rank,
+        detail: r.payoutAmount ? `${r.payoutAmount} NIM` : "—",
+      }));
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-10">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">Live Session</h1>
-        {sessionInfo && (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Entry fee {sessionInfo.entryFee} {sessionInfo.currency} ·{" "}
-            {sessionInfo.entryCount} joined · status: {sessionInfo.status}
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-10 sm:py-14">
+      <header className="animate-rise-in flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          {questionState && !settleResult && <LiveDot />}
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">
+            {questionState && !settleResult ? "Live now" : "Session"}
           </p>
+        </div>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-paper">
+          {sessionInfo ? `${sessionInfo.entryFee} ${sessionInfo.currency} Entry` : "Live Session"}
+        </h1>
+        {sessionInfo && (
+          <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-muted">
+            <span>{sessionInfo.entryCount} joined</span>
+            <Badge tone="neutral">{sessionInfo.status}</Badge>
+          </div>
         )}
       </header>
 
       {!entryId ? (
-        <form onSubmit={handleJoin} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Your wallet address
-            <input
-              required
-              readOnly={nimiqStatus === "available"}
-              value={walletAddress}
-              onChange={(e) => setWalletAddress(e.target.value)}
-              placeholder="NQ..."
-              className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-base outline-none read-only:opacity-70 focus:border-black dark:border-white/15 dark:focus:border-white"
-            />
-          </label>
-          {joinMutation.error && (
-            <p className="text-sm text-red-600">{joinMutation.error.message}</p>
-          )}
-          <button
-            type="submit"
-            disabled={joinMutation.isPending || nimiqStatus === "checking"}
-            className="rounded-full bg-black px-5 py-3 text-base font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-          >
-            {joinMutation.isPending
-              ? paymentStatus === "paying"
-                ? "Confirm in Nimiq Pay…"
-                : "Joining…"
-              : `Join & Pay ${sessionInfo?.entryFee ?? ""} ${sessionInfo?.currency ?? ""}`}
-          </button>
-          <p className="text-xs text-zinc-500">
-            {nimiqStatus === "available"
-              ? "Detected your Nimiq Pay wallet — you'll get a native confirmation dialog for the entry fee."
-              : "Not running inside Nimiq Pay, so payment collection isn't wired to a real wallet in this mode — joining records your entry without moving funds."}
-          </p>
-        </form>
-      ) : (
-        <div className="flex flex-col gap-1 text-sm text-zinc-500">
-          <p>
-            You&apos;re in as entry <span className="font-mono">{entryId}</span>
-          </p>
-          {paymentStatus === "paid" && (
-            <p className="text-emerald-600 dark:text-emerald-400">
-              Entry fee paid.
+        <Card className="animate-rise-in p-6 sm:p-8">
+          <form onSubmit={handleJoin} className="flex flex-col gap-4">
+            <Field>
+              Your wallet address
+              <Input
+                required
+                readOnly={nimiqStatus === "available"}
+                value={walletAddress}
+                onChange={(e) => setWalletAddress(e.target.value)}
+                placeholder="NQ..."
+              />
+            </Field>
+            {joinMutation.error && (
+              <p className="text-sm text-coral">{joinMutation.error.message}</p>
+            )}
+            <Button
+              type="submit"
+              disabled={joinMutation.isPending || nimiqStatus === "checking"}
+              className="w-full"
+            >
+              {joinMutation.isPending
+                ? paymentStatus === "paying"
+                  ? "Confirm in Nimiq Pay…"
+                  : "Joining…"
+                : `Join & Pay ${sessionInfo?.entryFee ?? ""} ${sessionInfo?.currency ?? ""}`}
+            </Button>
+            <p className="text-xs text-muted">
+              {nimiqStatus === "available"
+                ? "Detected your Nimiq Pay wallet — you'll get a native confirmation dialog for the entry fee."
+                : "Not running inside Nimiq Pay, so payment collection isn't wired to a real wallet in this mode — joining records your entry without moving funds."}
             </p>
-          )}
-          {paymentStatus === "error" && (
-            <p className="text-red-600">Payment failed: {paymentError}</p>
-          )}
+          </form>
+        </Card>
+      ) : (
+        <div className="animate-rise-in flex flex-col gap-1 font-mono text-xs text-muted">
+          <p>
+            Entry <span className="text-paper">{entryId}</span>
+          </p>
+          {paymentStatus === "paid" && <p className="text-lime">Entry fee paid.</p>}
+          {paymentStatus === "error" && <p className="text-coral">Payment failed: {paymentError}</p>}
         </div>
       )}
 
       {hostToken && (
-        <section className="flex flex-col gap-4">
-          <h2 className="text-lg font-semibold">Host controls</h2>
+        <Card className="animate-rise-in flex flex-col gap-4 p-6 sm:p-8">
+          <div className="flex items-center gap-2">
+            <Badge tone="lime">Host</Badge>
+          </div>
           <div className="flex gap-3">
             {!allQuestionsDone && (
-              <button
-                onClick={() => startQuestion(nextIndex)}
-                className="rounded-full border border-black/10 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
-              >
+              <Button variant="secondary" size="sm" onClick={() => startQuestion(nextIndex)}>
                 Start Question {nextIndex + 1}
-              </button>
+              </Button>
             )}
             {allQuestionsDone && !settleResult && (
-              <button
-                onClick={() => settleMutation.mutate()}
-                disabled={settleMutation.isPending}
-                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-              >
+              <Button size="sm" onClick={() => settleMutation.mutate()} disabled={settleMutation.isPending}>
                 {settleMutation.isPending ? "Settling…" : "Settle Session"}
-              </button>
+              </Button>
             )}
           </div>
-        </section>
+        </Card>
       )}
 
       {questionState && !settleResult && (
-        <section className="rounded-2xl border border-black/10 p-5 dark:border-white/10">
-          <div className="flex items-center justify-between text-sm text-zinc-500">
-            <span>
-              Question {questionState.index + 1} / {questionState.total}
-            </span>
-            <span>{answered ? "Answered" : `${secondsLeft}s`}</span>
-          </div>
-          <h3 className="mt-2 text-xl font-semibold">
-            {questionState.question.text}
-          </h3>
-          <div className="mt-4 flex flex-col gap-2">
-            {questionState.question.options.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => submitAnswer(opt)}
-                disabled={answered || !entryId}
-                className={`rounded-lg border px-4 py-3 text-left text-base transition-colors disabled:opacity-60 ${
-                  selectedOption === opt
-                    ? "border-black bg-black/5 dark:border-white dark:bg-white/10"
-                    : "border-black/10 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
-                }`}
+        <motion.div
+          key={questionState.question.id}
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <Card className="overflow-hidden p-6 sm:p-8">
+            <div className="flex items-center justify-between font-mono text-xs uppercase tracking-wider text-muted">
+              <span>
+                Question {questionState.index + 1} / {questionState.total}
+              </span>
+              <span
+                className={`text-2xl font-bold tabular-nums ${urgent ? "text-coral" : "text-lime"}`}
               >
-                {opt}
-              </button>
-            ))}
-          </div>
-        </section>
+                {answered ? "✓" : secondsLeft}
+              </span>
+            </div>
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+              <motion.div
+                className={`h-full rounded-full ${urgent ? "bg-coral" : "bg-lime"}`}
+                animate={{ width: `${Math.max(0, timePct * 100)}%` }}
+                transition={{ ease: "linear", duration: 0.1 }}
+              />
+            </div>
+            <h3 className="mt-6 font-display text-2xl font-bold text-paper sm:text-3xl">
+              {questionState.question.text}
+            </h3>
+            <div className="mt-6 flex flex-col gap-3">
+              {questionState.question.options.map((opt) => (
+                <button
+                  key={opt}
+                  onClick={() => submitAnswer(opt)}
+                  disabled={answered || !entryId}
+                  className={`min-h-14 rounded-xl border px-5 py-4 text-left font-display text-base font-medium transition-all disabled:cursor-not-allowed ${
+                    selectedOption === opt
+                      ? "border-lime bg-lime/15 text-paper"
+                      : "border-border bg-surface text-paper hover:border-lime/40 disabled:opacity-50"
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </Card>
+        </motion.div>
       )}
 
-      <section>
-        <h2 className="text-lg font-semibold">Live Leaderboard</h2>
-        {rankings.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-500">No answers yet.</p>
-        ) : (
-          <ol className="mt-3 flex flex-col gap-1">
-            {rankings.map((entry) => (
-              <li
-                key={entry.userId}
-                className="flex items-center justify-between rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10"
-              >
-                <span>
-                  #{entry.rank} {entry.userId}
-                </span>
-                <span className="text-zinc-500">{entry.score} correct</span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <Card className="animate-rise-in p-6 sm:p-8">
+        <h2 className="font-display text-lg font-semibold text-paper">Live Leaderboard</h2>
+        <div className="mt-4">
+          <Leaderboard entries={liveEntries} emptyLabel="No answers yet." />
+        </div>
+      </Card>
 
       {settleResult && (
-        <section className="rounded-2xl border border-black/10 p-5 dark:border-white/10">
-          <h2 className="text-lg font-semibold">
-            {settleResult.refunded ? "Session refunded" : "Final Results"}
+        <Card className="animate-rise-in p-6 sm:p-8">
+          <h2 className="font-display text-lg font-semibold text-paper">
+            {settleResult.refunded ? "Session Refunded" : "Final Results"}
           </h2>
-          {settleResult.refunded ? (
-            <>
-              <p className="mt-1 text-sm text-zinc-500">
-                Didn&apos;t meet the minimum entries — everyone is refunded.
-              </p>
-              <ul className="mt-3 flex flex-col gap-1">
-                {settleResult.entries?.map((e) => (
-                  <li key={e.userId} className="text-sm">
-                    {e.userId}: {e.amount} refunded
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <ol className="mt-3 flex flex-col gap-1">
-              {settleResult.results?.map((r) => (
-                <li
-                  key={r.userId}
-                  className="flex items-center justify-between rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10"
-                >
-                  <span>
-                    #{r.rank} {r.userId}
-                  </span>
-                  <span className="text-zinc-500">
-                    {r.payoutAmount ? `${r.payoutAmount} NIM` : "—"}
-                  </span>
-                </li>
-              ))}
-            </ol>
+          {settleResult.refunded && (
+            <p className="mt-1 text-sm text-muted">
+              Didn&apos;t meet the minimum entries — everyone is refunded.
+            </p>
           )}
-          <p className="mt-3 text-xs text-zinc-500">
-            Payout amounts are computed, but sending the real on-chain
-            transaction isn&apos;t wired up yet — that needs the Nimiq
-            settlement integration.
+          <div className="mt-4">
+            <Leaderboard entries={settleEntries} emptyLabel="No entries." />
+          </div>
+          <p className="mt-4 text-xs text-muted">
+            Payout amounts are computed, but sending the real on-chain transaction isn&apos;t
+            wired up yet — that needs the Nimiq settlement integration.
           </p>
-        </section>
+        </Card>
       )}
     </div>
   );

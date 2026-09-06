@@ -58,6 +58,19 @@ export interface CumulativeLeaderboard {
   cumulative: { userId: string; totalScore: number; sessionsPlayed: number }[];
 }
 
+export interface RoomInfo {
+  id: string;
+  title: string;
+  topic: string | null;
+  schedule: string | null;
+  createdAt: string;
+}
+
+export async function getRoom(roomId: string) {
+  const { data } = await http.get<RoomInfo>(`/rooms/${roomId}`);
+  return data;
+}
+
 export async function createRoom(input: CreateRoomInput) {
   const { data } = await http.post<{ roomId: string; hostToken: string }>(
     "/rooms",
