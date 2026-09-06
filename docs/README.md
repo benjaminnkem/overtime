@@ -9,7 +9,7 @@ Communities want a recurring ritual with stakes, but nothing today gives them a 
 ## Setup & Run
 
 ```bash
-git clone https://github.com/tochison/overtime.git
+git clone https://github.com/benjaminnkem/overtime.git
 cd overtime
 pnpm install
 
@@ -34,10 +34,10 @@ Next.js · TypeScript · Tailwind CSS · TanStack Query · NestJS · socket.io �
 ## Team
 
 - Teammate — lead
-- Benjamin Nkem ([@tochison](https://github.com/tochison)) — fullstack engineer
+- Benjamin Nkem ([@benjaminnkem](https://github.com/benjaminnkem)) — fullstack engineer
 
 ## Links
 
-- Repo: `github.com/tochison/overtime` (create on kickoff)
+- Repo: `github.com/benjaminnkem/overtime` (create on kickoff)
 - Live demo: https://overtime-web.vercel.app (API: https://overtime-api-j0u4.onrender.com)
 - Deck: add before submission

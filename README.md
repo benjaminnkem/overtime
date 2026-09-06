@@ -110,7 +110,7 @@ overtime/
 ### Installation
 
 ```bash
-git clone https://github.com/tochison/overtime.git
+git clone https://github.com/benjaminnkem/overtime.git
 cd overtime
 pnpm install
 ```
@@ -162,7 +162,7 @@ Track detailed phase-by-phase progress in [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN
 ## Team
 
 - Teammate — lead
-- Benjamin Nkem ([@tochison](https://github.com/tochison)) — fullstack engineer
+- Benjamin Nkem ([@benjaminnkem](https://github.com/benjaminnkem)) — fullstack engineer
 
 ## License
 
