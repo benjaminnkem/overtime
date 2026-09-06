@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { createSession, getRoomLeaderboard } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createSession, getRoomLeaderboard, getRoomSessions } from "@/lib/api";
 import { getStoredHostToken } from "@/lib/host-token";
 
 interface QuestionDraft {
@@ -18,10 +18,17 @@ function emptyQuestion(): QuestionDraft {
 }
 
 export function RoomClient({ roomId }: { roomId: string }) {
+  const queryClient = useQueryClient();
+
   const { data: leaderboard } = useQuery({
     queryKey: ["room-leaderboard", roomId],
     queryFn: () => getRoomLeaderboard(roomId),
     select: (res) => res.cumulative,
+  });
+
+  const { data: sessions } = useQuery({
+    queryKey: ["room-sessions", roomId],
+    queryFn: () => getRoomSessions(roomId),
   });
 
   const [scheduledAt, setScheduledAt] = useState("");
@@ -30,7 +37,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [questions, setQuestions] = useState<QuestionDraft[]>([
     emptyQuestion(),
   ]);
-  const [createdSessionIds, setCreatedSessionIds] = useState<string[]>([]);
   const [hostToken, setHostToken] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,8 +66,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
         hostToken,
       );
     },
-    onSuccess: ({ sessionId }) => {
-      setCreatedSessionIds((ids) => [sessionId, ...ids]);
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["room-sessions", roomId] });
       setQuestions([emptyQuestion()]);
     },
   });
@@ -131,23 +137,34 @@ export function RoomClient({ roomId }: { roomId: string }) {
         )}
       </section>
 
-      {createdSessionIds.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold">Sessions created this visit</h2>
-          <ul className="mt-2 flex flex-col gap-1">
-            {createdSessionIds.map((id) => (
-              <li key={id}>
+      <section>
+        <h2 className="text-lg font-semibold">Sessions</h2>
+        {!sessions || sessions.length === 0 ? (
+          <p className="mt-2 text-sm text-zinc-500">No sessions scheduled yet.</p>
+        ) : (
+          <ul className="mt-3 flex flex-col gap-1">
+            {sessions.map((session) => (
+              <li key={session.id}>
                 <Link
-                  href={`/sessions/${id}`}
-                  className="text-sm underline underline-offset-2"
+                  href={`/sessions/${session.id}`}
+                  className="flex items-center justify-between rounded-lg border border-black/10 px-3 py-2 text-sm hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
                 >
-                  /sessions/{id}
+                  <span>
+                    {new Date(session.scheduledAt).toLocaleString(undefined, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </span>
+                  <span className="text-zinc-500">
+                    {session.entryFee} {session.currency} · {session.entryCount} joined ·{" "}
+                    {session.status}
+                  </span>
                 </Link>
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
 
       <section>
         <h2 className="text-lg font-semibold">Schedule a Session</h2>

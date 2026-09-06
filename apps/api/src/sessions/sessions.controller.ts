@@ -17,6 +17,11 @@ export class SessionsController {
     return this.sessionsService.create(roomId, dto, hostToken);
   }
 
+  @Get('rooms/:roomId/sessions')
+  findAllByRoom(@Param('roomId') roomId: string) {
+    return this.sessionsService.findAllByRoom(roomId);
+  }
+
   @Get('sessions/:id')
   findOne(@Param('id') id: string) {
     return this.sessionsService.findOne(id);

@@ -118,6 +118,11 @@ POST   /rooms/:id/sessions
   res:  { sessionId }
   // 403 if the header is missing or doesn't match the room's hostToken.
 
+GET    /rooms/:id/sessions
+  res:  [{ id, roomId, scheduledAt, entryFee, currency, status, minEntries, entryCount }]
+  // All of a room's sessions, newest scheduledAt first. Public — no host token needed,
+  // since participants also need to find sessions to join, not just the host.
+
 GET    /sessions/:id
   res:  { id, roomId, scheduledAt, entryFee, currency, status, minEntries, entryCount }
 

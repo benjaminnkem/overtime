@@ -84,6 +84,11 @@ export async function getSession(sessionId: string) {
   return data;
 }
 
+export async function getRoomSessions(roomId: string) {
+  const { data } = await http.get<SessionInfo[]>(`/rooms/${roomId}/sessions`);
+  return data;
+}
+
 export async function joinSession(sessionId: string, walletAddress: string) {
   const { data } = await http.post<JoinResult>(`/sessions/${sessionId}/join`, {
     walletAddress,

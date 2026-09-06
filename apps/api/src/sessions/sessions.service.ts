@@ -75,6 +75,25 @@ export class SessionsService {
     };
   }
 
+  async findAllByRoom(roomId: string) {
+    const sessions = await this.prisma.session.findMany({
+      where: { roomId },
+      include: { _count: { select: { entries: true } } },
+      orderBy: { scheduledAt: 'desc' },
+    });
+
+    return sessions.map((session) => ({
+      id: session.id,
+      roomId: session.roomId,
+      scheduledAt: session.scheduledAt,
+      entryFee: session.entryFee,
+      currency: session.currency,
+      status: session.status,
+      minEntries: session.minEntries,
+      entryCount: session._count.entries,
+    }));
+  }
+
   async join(sessionId: string, dto: JoinSessionDto) {
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
