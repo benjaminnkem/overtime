@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { createRoom } from "@/lib/api";
+import { storeHostToken } from "@/lib/host-token";
 
 export default function Home() {
   const router = useRouter();
@@ -13,7 +14,10 @@ export default function Home() {
 
   const { mutate, isPending, error } = useMutation({
     mutationFn: createRoom,
-    onSuccess: ({ roomId }) => router.push(`/rooms/${roomId}`),
+    onSuccess: ({ roomId, hostToken }) => {
+      storeHostToken(roomId, hostToken);
+      router.push(`/rooms/${roomId}`);
+    },
   });
 
   function handleSubmit(e: React.FormEvent) {

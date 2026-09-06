@@ -35,6 +35,7 @@
 model Room {
   id         String    @id @default(cuid())
   hostId     String
+  hostToken  String    @unique
   title      String
   topic      String?
   schedule   String?
@@ -106,11 +107,16 @@ model Result {
 ```
 POST   /rooms
   body: { title, topic?, schedule? }
-  res:  { roomId }
+  res:  { roomId, hostToken }
+  // hostToken is returned once, here only — never exposed by any GET endpoint.
+  // The client that created the room must hold onto it (session storage/localStorage)
+  // and send it as the x-host-token header on every host-only action below.
 
 POST   /rooms/:id/sessions
+  headers: x-host-token: <the room's hostToken>
   body: { scheduledAt, entryFee, currency, minEntries?, questions: [{ text, options, correctOption, timeLimitSec }] }
   res:  { sessionId }
+  // 403 if the header is missing or doesn't match the room's hostToken.
 
 GET    /sessions/:id
   res:  { id, roomId, scheduledAt, entryFee, currency, status, minEntries, entryCount }
@@ -135,13 +141,18 @@ WS     /sessions/:id   (socket.io namespace)
   server -> client: { type: "question", question: {...}, index, total }
   client -> server: { type: "answer", entryId, questionId, selectedOption }
   server -> client: { type: "leaderboard", rankings: [{ userId, score, rank }] }
+  client -> server: "host:startQuestion" { sessionId, questionIndex, hostToken }
+  // Silently no-ops (no question broadcast) if hostToken doesn't match the
+  // session's room — same capability-token model as the REST host actions.
 
 POST   /sessions/:id/settle
+  headers: x-host-token: <the session's room's hostToken>
   res:  { results: [{ userId, rank, payoutAmount, txHash }] }
   // if entries < minEntries: res: { refunded: true, entries: [{ userId, amount, txHash }] }
-  // Attempts a real payout/refund transaction from the custodial wallet for
-  // each entrant; txHash is null (not an error) whenever the client isn't
-  // connected — settlement still completes with correct computed amounts.
+  // 403 if the header is missing or doesn't match. Attempts a real payout/refund
+  // transaction from the custodial wallet for each entrant; txHash is null (not
+  // an error) whenever the client isn't connected — settlement still completes
+  // with correct computed amounts.
 
 GET    /rooms/:id/leaderboard
   res:  { cumulative: [{ userId, totalScore, sessionsPlayed }] }

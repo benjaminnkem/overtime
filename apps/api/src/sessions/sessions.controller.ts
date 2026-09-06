@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
 import { SessionsService } from './sessions.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { JoinSessionDto } from './dto/join-session.dto';
@@ -9,8 +9,12 @@ export class SessionsController {
   constructor(private readonly sessionsService: SessionsService) {}
 
   @Post('rooms/:roomId/sessions')
-  create(@Param('roomId') roomId: string, @Body() dto: CreateSessionDto) {
-    return this.sessionsService.create(roomId, dto);
+  create(
+    @Param('roomId') roomId: string,
+    @Body() dto: CreateSessionDto,
+    @Headers('x-host-token') hostToken: string,
+  ) {
+    return this.sessionsService.create(roomId, dto, hostToken);
   }
 
   @Get('sessions/:id')
@@ -32,7 +36,7 @@ export class SessionsController {
   }
 
   @Post('sessions/:id/settle')
-  settle(@Param('id') id: string) {
-    return this.sessionsService.settle(id);
+  settle(@Param('id') id: string, @Headers('x-host-token') hostToken: string) {
+    return this.sessionsService.settle(id, hostToken);
   }
 }

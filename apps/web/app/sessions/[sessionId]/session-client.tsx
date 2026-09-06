@@ -9,8 +9,13 @@ import {
   settleSession,
   type SettleResult,
 } from "@/lib/api";
-import { getSocket, type LiveQuestion, type LiveLeaderboard } from "@/lib/socket";
+import {
+  getSocket,
+  type LiveQuestion,
+  type LiveLeaderboard,
+} from "@/lib/socket";
 import { getNimiqProvider } from "@/lib/nimiq";
+import { getStoredHostToken } from "@/lib/host-token";
 import type { NimiqProvider } from "@nimiq/mini-app-sdk";
 
 function entryStorageKey(sessionId: string) {
@@ -26,11 +31,15 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
   const [walletAddress, setWalletAddress] = useState("");
   const [entryId, setEntryId] = useState<string | null>(null);
 
-  const [nimiqProvider, setNimiqProvider] = useState<NimiqProvider | null>(null);
-  const [nimiqStatus, setNimiqStatus] = useState<"checking" | "available" | "unavailable">(
-    "checking",
+  const [nimiqProvider, setNimiqProvider] = useState<NimiqProvider | null>(
+    null,
   );
-  const [paymentStatus, setPaymentStatus] = useState<"idle" | "paying" | "paid" | "error">("idle");
+  const [nimiqStatus, setNimiqStatus] = useState<
+    "checking" | "available" | "unavailable"
+  >("checking");
+  const [paymentStatus, setPaymentStatus] = useState<
+    "idle" | "paying" | "paid" | "error"
+  >("idle");
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const [questionState, setQuestionState] = useState<LiveQuestion | null>(null);
@@ -40,6 +49,7 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
   const [now, setNow] = useState(() => Date.now());
 
   const [settleResult, setSettleResult] = useState<SettleResult | null>(null);
+  const hostToken = sessionInfo ? getStoredHostToken(sessionInfo.roomId) : null;
 
   useEffect(() => {
     const stored = localStorage.getItem(entryStorageKey(sessionId));
@@ -89,7 +99,10 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
 
   const joinMutation = useMutation({
     mutationFn: async () => {
-      const { entryId: newEntryId, paymentRequest } = await joinSession(sessionId, walletAddress);
+      const { entryId: newEntryId, paymentRequest } = await joinSession(
+        sessionId,
+        walletAddress,
+      );
       localStorage.setItem(entryStorageKey(sessionId), newEntryId);
       setEntryId(newEntryId);
 
@@ -111,7 +124,13 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
   });
 
   const settleMutation = useMutation({
-    mutationFn: () => settleSession(sessionId),
+    mutationFn: () => {
+      if (!hostToken)
+        throw new Error(
+          "Only the host who created this room can settle sessions",
+        );
+      return settleSession(sessionId, hostToken);
+    },
     onSuccess: setSettleResult,
   });
 
@@ -121,7 +140,12 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
   }
 
   function startQuestion(index: number) {
-    getSocket().emit("host:startQuestion", { sessionId, questionIndex: index });
+    if (!hostToken) return;
+    getSocket().emit("host:startQuestion", {
+      sessionId,
+      questionIndex: index,
+      hostToken,
+    });
   }
 
   function submitAnswer(option: string) {
@@ -137,7 +161,9 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
   }
 
   const nextIndex = questionState ? questionState.index + 1 : 0;
-  const allQuestionsDone = questionState ? questionState.index + 1 >= questionState.total : false;
+  const allQuestionsDone = questionState
+    ? questionState.index + 1 >= questionState.total
+    : false;
   const secondsLeft = questionState
     ? Math.max(
         0,
@@ -152,8 +178,8 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
         <h1 className="text-2xl font-bold tracking-tight">Live Session</h1>
         {sessionInfo && (
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Entry fee {sessionInfo.entryFee} {sessionInfo.currency} · {sessionInfo.entryCount}{" "}
-            joined · status: {sessionInfo.status}
+            Entry fee {sessionInfo.entryFee} {sessionInfo.currency} ·{" "}
+            {sessionInfo.entryCount} joined · status: {sessionInfo.status}
           </p>
         )}
       </header>
@@ -197,7 +223,9 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
             You&apos;re in as entry <span className="font-mono">{entryId}</span>
           </p>
           {paymentStatus === "paid" && (
-            <p className="text-emerald-600 dark:text-emerald-400">Entry fee paid.</p>
+            <p className="text-emerald-600 dark:text-emerald-400">
+              Entry fee paid.
+            </p>
           )}
           {paymentStatus === "error" && (
             <p className="text-red-600">Payment failed: {paymentError}</p>
@@ -205,31 +233,30 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      <section className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold">Host controls</h2>
-        <div className="flex gap-3">
-          {!allQuestionsDone && (
-            <button
-              onClick={() => startQuestion(nextIndex)}
-              className="rounded-full border border-black/10 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
-            >
-              Start Question {nextIndex + 1}
-            </button>
-          )}
-          {allQuestionsDone && !settleResult && (
-            <button
-              onClick={() => settleMutation.mutate()}
-              disabled={settleMutation.isPending}
-              className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-            >
-              {settleMutation.isPending ? "Settling…" : "Settle Session"}
-            </button>
-          )}
-        </div>
-        <p className="text-xs text-zinc-500">
-          No host authentication yet — these controls are visible to anyone on this page.
-        </p>
-      </section>
+      {hostToken && (
+        <section className="flex flex-col gap-4">
+          <h2 className="text-lg font-semibold">Host controls</h2>
+          <div className="flex gap-3">
+            {!allQuestionsDone && (
+              <button
+                onClick={() => startQuestion(nextIndex)}
+                className="rounded-full border border-black/10 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+              >
+                Start Question {nextIndex + 1}
+              </button>
+            )}
+            {allQuestionsDone && !settleResult && (
+              <button
+                onClick={() => settleMutation.mutate()}
+                disabled={settleMutation.isPending}
+                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              >
+                {settleMutation.isPending ? "Settling…" : "Settle Session"}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       {questionState && !settleResult && (
         <section className="rounded-2xl border border-black/10 p-5 dark:border-white/10">
@@ -239,7 +266,9 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
             </span>
             <span>{answered ? "Answered" : `${secondsLeft}s`}</span>
           </div>
-          <h3 className="mt-2 text-xl font-semibold">{questionState.question.text}</h3>
+          <h3 className="mt-2 text-xl font-semibold">
+            {questionState.question.text}
+          </h3>
           <div className="mt-4 flex flex-col gap-2">
             {questionState.question.options.map((opt) => (
               <button
@@ -316,8 +345,9 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
             </ol>
           )}
           <p className="mt-3 text-xs text-zinc-500">
-            Payout amounts are computed, but sending the real on-chain transaction isn&apos;t
-            wired up yet — that needs the Nimiq settlement integration.
+            Payout amounts are computed, but sending the real on-chain
+            transaction isn&apos;t wired up yet — that needs the Nimiq
+            settlement integration.
           </p>
         </section>
       )}

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
+import { RoomsService } from '../rooms/rooms.service';
 import { Prisma } from '../../generated/prisma/client.js';
 
 interface JoinPayload {
@@ -16,6 +17,7 @@ interface JoinPayload {
 interface StartQuestionPayload {
   sessionId: string;
   questionIndex: number;
+  hostToken: string;
 }
 
 interface AnswerPayload {
@@ -37,7 +39,10 @@ export class SessionsGateway {
 
   private readonly activeQuestions = new Map<string, ActiveQuestion>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rooms: RoomsService,
+  ) {}
 
   @SubscribeMessage('session:join')
   async handleJoin(
@@ -49,6 +54,17 @@ export class SessionsGateway {
 
   @SubscribeMessage('host:startQuestion')
   async handleStartQuestion(@MessageBody() payload: StartQuestionPayload) {
+    const session = await this.prisma.session.findUnique({
+      where: { id: payload.sessionId },
+    });
+    if (!session) return;
+
+    try {
+      await this.rooms.verifyHostToken(session.roomId, payload.hostToken);
+    } catch {
+      return;
+    }
+
     const questions = await this.prisma.question.findMany({
       where: { sessionId: payload.sessionId },
       orderBy: { order: 'asc' },

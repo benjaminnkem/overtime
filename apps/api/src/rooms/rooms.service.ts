@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 
@@ -10,12 +15,23 @@ export class RoomsService {
     const room = await this.prisma.room.create({
       data: {
         hostId: dto.hostId,
+        hostToken: randomBytes(24).toString('hex'),
         title: dto.title,
         topic: dto.topic,
         schedule: dto.schedule,
       },
     });
-    return { roomId: room.id };
+    return { roomId: room.id, hostToken: room.hostToken };
+  }
+
+  async verifyHostToken(roomId: string, hostToken: string | undefined) {
+    const room = await this.prisma.room.findUnique({ where: { id: roomId } });
+    if (!room) {
+      throw new NotFoundException(`Room ${roomId} not found`);
+    }
+    if (!hostToken || hostToken !== room.hostToken) {
+      throw new ForbiddenException('Invalid or missing host token');
+    }
   }
 
   async getCumulativeLeaderboard(roomId: string) {

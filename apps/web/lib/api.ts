@@ -59,14 +59,22 @@ export interface CumulativeLeaderboard {
 }
 
 export async function createRoom(input: CreateRoomInput) {
-  const { data } = await http.post<{ roomId: string }>("/rooms", input);
+  const { data } = await http.post<{ roomId: string; hostToken: string }>(
+    "/rooms",
+    input,
+  );
   return data;
 }
 
-export async function createSession(roomId: string, input: CreateSessionInput) {
+export async function createSession(
+  roomId: string,
+  input: CreateSessionInput,
+  hostToken: string,
+) {
   const { data } = await http.post<{ sessionId: string }>(
     `/rooms/${roomId}/sessions`,
     input,
+    { headers: { "x-host-token": hostToken } },
   );
   return data;
 }
@@ -96,9 +104,11 @@ export async function recordDeposit(
   return data;
 }
 
-export async function settleSession(sessionId: string) {
+export async function settleSession(sessionId: string, hostToken: string) {
   const { data } = await http.post<SettleResult>(
     `/sessions/${sessionId}/settle`,
+    undefined,
+    { headers: { "x-host-token": hostToken } },
   );
   return data;
 }

@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { NimiqService } from '../nimiq/nimiq.service';
 import { NimiqClientService } from '../nimiq/nimiq-client.service';
+import { RoomsService } from '../rooms/rooms.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { JoinSessionDto } from './dto/join-session.dto';
 
@@ -21,13 +22,15 @@ export class SessionsService {
     private readonly prisma: PrismaService,
     private readonly nimiq: NimiqService,
     private readonly nimiqClient: NimiqClientService,
+    private readonly rooms: RoomsService,
   ) {}
 
-  async create(roomId: string, dto: CreateSessionDto) {
-    const room = await this.prisma.room.findUnique({ where: { id: roomId } });
-    if (!room) {
-      throw new NotFoundException(`Room ${roomId} not found`);
-    }
+  async create(
+    roomId: string,
+    dto: CreateSessionDto,
+    hostToken: string | undefined,
+  ) {
+    await this.rooms.verifyHostToken(roomId, hostToken);
 
     const session = await this.prisma.session.create({
       data: {
@@ -140,7 +143,7 @@ export class SessionsService {
     return { entryId, depositTxHash, depositVerified };
   }
 
-  async settle(sessionId: string) {
+  async settle(sessionId: string, hostToken: string | undefined) {
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
       include: { entries: { include: { answers: true } } },
@@ -148,6 +151,7 @@ export class SessionsService {
     if (!session) {
       throw new NotFoundException(`Session ${sessionId} not found`);
     }
+    await this.rooms.verifyHostToken(session.roomId, hostToken);
     if (session.status === 'settled' || session.status === 'refunded') {
       throw new BadRequestException(
         `Session ${sessionId} has already been settled`,
