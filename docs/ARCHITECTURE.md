@@ -112,6 +112,9 @@ POST   /rooms
   // The client that created the room must hold onto it (session storage/localStorage)
   // and send it as the x-host-token header on every host-only action below.
 
+GET    /rooms/:id
+  res:  { id, title, topic, schedule, createdAt }
+
 POST   /rooms/:id/sessions
   headers: x-host-token: <the room's hostToken>
   body: { scheduledAt, entryFee, currency, minEntries?, questions: [{ text, options, correctOption, timeLimitSec }] }

@@ -24,6 +24,20 @@ export class RoomsService {
     return { roomId: room.id, hostToken: room.hostToken };
   }
 
+  async findOne(roomId: string) {
+    const room = await this.prisma.room.findUnique({ where: { id: roomId } });
+    if (!room) {
+      throw new NotFoundException(`Room ${roomId} not found`);
+    }
+    return {
+      id: room.id,
+      title: room.title,
+      topic: room.topic,
+      schedule: room.schedule,
+      createdAt: room.createdAt,
+    };
+  }
+
   async verifyHostToken(roomId: string, hostToken: string | undefined) {
     const room = await this.prisma.room.findUnique({ where: { id: roomId } });
     if (!room) {

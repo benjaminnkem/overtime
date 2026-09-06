@@ -11,6 +11,11 @@ export class RoomsController {
     return this.roomsService.create(dto);
   }
 
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.roomsService.findOne(id);
+  }
+
   @Get(':id/leaderboard')
   getLeaderboard(@Param('id') id: string) {
     return this.roomsService.getCumulativeLeaderboard(id);
