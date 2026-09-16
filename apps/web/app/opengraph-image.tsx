@@ -1,9 +1,15 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { ImageResponse } from "next/og";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-export default function OpengraphImage() {
+export default async function OpengraphImage() {
+  const fontData = await readFile(
+    path.join(process.cwd(), "app/fonts/SpaceGrotesk-Bold.ttf"),
+  );
+
   return new ImageResponse(
     (
       <div
@@ -64,6 +70,7 @@ export default function OpengraphImage() {
             display: "flex",
             fontSize: 130,
             fontWeight: 700,
+            fontFamily: "Space Grotesk",
             color: "#f5f6f2",
             letterSpacing: -2,
           }}
@@ -83,6 +90,9 @@ export default function OpengraphImage() {
         </div>
       </div>
     ),
-    size,
+    {
+      ...size,
+      fonts: [{ name: "Space Grotesk", data: fontData, weight: 700, style: "normal" }],
+    },
   );
 }

@@ -1,9 +1,15 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { ImageResponse } from "next/og";
 
 export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
-export default function AppleIcon() {
+export default async function AppleIcon() {
+  const fontData = await readFile(
+    path.join(process.cwd(), "app/fonts/SpaceGrotesk-Bold.ttf"),
+  );
+
   return new ImageResponse(
     (
       <div
@@ -23,7 +29,7 @@ export default function AppleIcon() {
             fontSize: 84,
             fontWeight: 700,
             color: "#d7ff3f",
-            fontFamily: "sans-serif",
+            fontFamily: "Space Grotesk",
           }}
         >
           OT
@@ -41,6 +47,9 @@ export default function AppleIcon() {
         />
       </div>
     ),
-    size,
+    {
+      ...size,
+      fonts: [{ name: "Space Grotesk", data: fontData, weight: 700, style: "normal" }],
+    },
   );
 }
