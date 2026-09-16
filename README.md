@@ -162,6 +162,7 @@ Track detailed phase-by-phase progress in [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN
 | [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md)     | Phased build plan and checkpoints                              |
 | [`docs/PITCH.md`](docs/PITCH.md)               | Stage pitch and anticipated judge Q&A                          |
 | [`docs/RISKS.md`](docs/RISKS.md)               | Live-demo risks and fallbacks                                  |
+| [`docs/DEMO_VIDEO.md`](docs/DEMO_VIDEO.md)     | Shot-by-shot script for the submission demo video               |
 
 ## Team
 
