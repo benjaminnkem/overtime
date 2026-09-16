@@ -14,9 +14,22 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://overtime-web.vercel.app"),
   title: "Overtime",
   description:
     "Your group chat's trivia debates, as a weekly live event with real stakes.",
+  openGraph: {
+    title: "Overtime",
+    description:
+      "Your group chat's trivia debates, as a weekly live event with real stakes.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Overtime",
+    description:
+      "Your group chat's trivia debates, as a weekly live event with real stakes.",
+  },
 };
 
 export const viewport: Viewport = {

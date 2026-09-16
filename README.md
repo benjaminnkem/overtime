@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apps/web/app/icon.svg" width="64" height="64" alt="Overtime logo" />
+</p>
+
 # Overtime
 
 **Your group chat's trivia debates, as a weekly live event with real stakes.**
@@ -166,4 +170,4 @@ Track detailed phase-by-phase progress in [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN
 
 ## License
 
-Not yet added — an MIT license is planned before submission (see [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md)).
+[MIT](LICENSE)
