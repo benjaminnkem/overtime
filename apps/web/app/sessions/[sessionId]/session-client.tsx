@@ -73,7 +73,11 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     const socket = getSocket();
-    socket.emit("session:join", { sessionId });
+    function join() {
+      socket.emit("session:join", { sessionId });
+    }
+    join();
+    socket.on("connect", join);
 
     function onQuestion(msg: LiveQuestion) {
       setQuestionState(msg);
@@ -87,6 +91,7 @@ export function SessionClient({ sessionId }: { sessionId: string }) {
     socket.on("question", onQuestion);
     socket.on("leaderboard", onLeaderboard);
     return () => {
+      socket.off("connect", join);
       socket.off("question", onQuestion);
       socket.off("leaderboard", onLeaderboard);
     };
